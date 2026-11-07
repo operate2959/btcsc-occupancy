@@ -1,0 +1,5 @@
+{
+  "_about": "Days the center was closed (typhoon days etc.). Raw samples are kept, but these dates are left out of the heatmap averages, calendar and coverage. Days where gym and pool read 0 all day are also left out automatically.",
+  "2026-10-23": "Typhoon 薔琵: Taichung suspended work and school, center closed",
+  "2026-10-24": "Typhoon 薔琵 (day 2): Taichung suspended work and school, center closed"
+}

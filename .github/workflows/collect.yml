@@ -1,0 +1,53 @@
+name: Collect occupancy
+
+# Samples the btcsc.cyc.org.tw live counter once a minute, 05:50-22:51 Taipei.
+# A scheduled workflow can't run every minute, so the day is split into four
+# runs of about 4h20m that each loop inside themselves (a job may run 6h max).
+# Each run is scheduled ~50 minutes before its window because GitHub often
+# starts scheduled runs late; it then waits for the window to open.
+# Every run writes only its own files (data/raw/<date>_<run>.csv), so runs that
+# overlap never conflict. The nightly workflow merges them into data/YYYY-MM.csv.
+
+on:
+  schedule:
+    - cron: "3 21 * * *"   # 05:03 Taipei -> samples 05:50-10:10
+    - cron: "23 1 * * *"   # 09:23 Taipei -> samples 10:11-14:30
+    - cron: "43 5 * * *"   # 13:43 Taipei -> samples 14:31-18:50
+    - cron: "3 10 * * *"   # 18:03 Taipei -> samples 18:51-22:51
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "Start (Taipei HH:MM, blank = now)"
+        required: false
+      to:
+        description: "Stop (Taipei HH:MM)"
+        required: true
+        default: "22:51"
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick the time window
+        id: win
+        run: |
+          case "${{ github.event.schedule }}" in
+            "3 21 * * *")  echo "from=05:50" >> $GITHUB_OUTPUT; echo "to=10:10" >> $GITHUB_OUTPUT; echo "tag=1" >> $GITHUB_OUTPUT ;;
+            "23 1 * * *")  echo "from=10:11" >> $GITHUB_OUTPUT; echo "to=14:30" >> $GITHUB_OUTPUT; echo "tag=2" >> $GITHUB_OUTPUT ;;
+            "43 5 * * *")  echo "from=14:31" >> $GITHUB_OUTPUT; echo "to=18:50" >> $GITHUB_OUTPUT; echo "tag=3" >> $GITHUB_OUTPUT ;;
+            "3 10 * * *")  echo "from=18:51" >> $GITHUB_OUTPUT; echo "to=22:51" >> $GITHUB_OUTPUT; echo "tag=4" >> $GITHUB_OUTPUT ;;
+            *) echo "from=${{ inputs.from }}" >> $GITHUB_OUTPUT; echo "to=${{ inputs.to }}" >> $GITHUB_OUTPUT; echo "tag=m${{ github.run_id }}" >> $GITHUB_OUTPUT ;;
+          esac
+
+      - name: Sample once a minute and commit every 10 minutes
+        env:
+          FROM: ${{ steps.win.outputs.from }}
+          TO: ${{ steps.win.outputs.to }}
+          TAG: ${{ steps.win.outputs.tag }}
+        run: bash scripts/run_window.sh
