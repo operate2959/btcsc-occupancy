@@ -3,260 +3,745 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Beitun sports center crowd heatmap</title>
+<title>Beitun Crowd Heatmap</title>
+<meta name="description" content="How busy the gym, pool and ice rink at Beitun Sports Center are, by time of day.">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <style>
-  :root { --bg:#f7f8fa; --fg:#1b1f24; --muted:#5f6b7a; --card:#fff; --line:#e3e7ee; --accent:#0b3d91; }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) { --bg:#0f1318; --fg:#e6e9ef; --muted:#97a3b3; --card:#171c23; --line:#2a313b; --accent:#7ab0ff; }
+/* Design tokens, resolved from the dashboard look this page was first built in. */
+:root {
+  color-scheme: light dark;
+  --color-bg: #f9f9f7; --color-panel: #fff; --color-fg: #0b0b0b; --color-fg-muted: #898781;
+  --color-border-line: rgb(11 11 11 / 10%); --color-ok: #006300; --color-warn: #734500; --color-bad: #8e2626;
+  --cds-border: rgb(11 11 11 / 10%); --cds-chart-grid: rgb(11 11 11 / 10%);
+  --cds-text-secondary: #52514e; --cds-surface-popover: #fff;
+  --cds-shadow-popover: 0 8px 24px #0000001f, 0 2px 6px #00000014;
+  --cds-chart-categorical-1: #2a78d6; --cds-chart-status-critical: #d03b3b;
+  --font-anthropic-sans: "Anthropic Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-anthropic-serif: "Anthropic Serif", ui-serif, Georgia, "Times New Roman", serif;
+  --cds-font-size-caption: .75rem; --cds-font-size-body: .875rem; --cds-font-size-heading: .9375rem; --cds-font-size-title: 1.375rem;
+  --cds-font-weight-medium: 500;
+  --cds-pad-xs: .375rem; --cds-pad-sm: .5rem; --cds-pad-md: .75rem; --cds-pad-lg: 1rem; --cds-pad-xl: 1.5rem;
+  --cds-gap-xs: .5rem; --cds-gap-sm: .75rem; --cds-gap-md: 1rem; --cds-gap-lg: 1.75rem;
+  --cds-radius: .5rem; --cds-dur-slow: .45s;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #0b0b0b; --color-panel: #1a1a19; --color-fg: #f0efec; --color-fg-muted: #898781;
+    --color-border-line: rgb(255 255 255 / 10%); --color-ok: #0ca30c; --color-warn: #db9300; --color-bad: #ec7e7e;
+    --cds-border: rgb(255 255 255 / 10%); --cds-chart-grid: rgb(255 255 255 / 10%);
+    --cds-text-secondary: #c3c2b7; --cds-surface-popover: #20201f;
+    --cds-shadow-popover: 0 8px 24px #00000052, 0 2px 6px #0003;
+    --cds-chart-categorical-1: #3987e5;
   }
-  :root[data-theme="dark"] { --bg:#0f1318; --fg:#e6e9ef; --muted:#97a3b3; --card:#171c23; --line:#2a313b; --accent:#7ab0ff; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
-  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
-  h1 { font-size: 20px; margin: 4px 0 2px; }
-  h2 { font-size: 16px; margin: 20px 0 8px; }
-  .sub { color: var(--muted); margin: 0 0 12px; font-size: 13px; }
-  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin: 8px 0 12px; }
-  button { font: inherit; color: var(--fg); background: var(--card); border:1px solid var(--line); border-radius:8px; padding:6px 12px; cursor:pointer; }
-  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-  .card { background: var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; overflow-x:auto; }
-  table { border-collapse: separate; border-spacing: 2px; font-size: 12px; }
-  th { font-weight: 500; color: var(--muted); text-align:right; padding: 0 6px; white-space: nowrap; }
-  th.top { text-align:center; }
-  td.c { width: 30px; min-width: 30px; height: 26px; border-radius: 4px; text-align:center; font-size: 11px; }
-  td.lbl { text-align:left; padding-right: 8px; color: var(--fg); white-space: nowrap; }
-  .legend { display:flex; align-items:center; gap:6px; color: var(--muted); font-size: 12px; margin-top: 8px; }
-  .legend span.sw { width: 18px; height: 12px; border-radius: 3px; display:inline-block; }
-  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-top: 8px; }
-  .hidden { display:none; }
-  .err { color: #b42318; }
-  svg text { fill: var(--muted); font-size: 11px; }
-  svg .grid { stroke: var(--line); }
-  footer { color: var(--muted); font-size: 12px; margin: 24px 0 40px; }
-  table.list td, table.list th { text-align:left; padding: 4px 8px; font-size: 13px; }
-  table.list th { border-bottom: 1px solid var(--line); }
+}
+:root[data-theme="dark"] {
+  --color-bg: #0b0b0b; --color-panel: #1a1a19; --color-fg: #f0efec; --color-fg-muted: #898781;
+  --color-border-line: rgb(255 255 255 / 10%); --color-ok: #0ca30c; --color-warn: #db9300; --color-bad: #ec7e7e;
+  --cds-border: rgb(255 255 255 / 10%); --cds-chart-grid: rgb(255 255 255 / 10%);
+  --cds-text-secondary: #c3c2b7; --cds-surface-popover: #20201f;
+  --cds-shadow-popover: 0 8px 24px #00000052, 0 2px 6px #0003;
+  --cds-chart-categorical-1: #3987e5;
+}
+/* Base reset, as in the original page. */
+*, ::before, ::after { box-sizing: border-box; border: 0 solid; border-color: var(--color-border-line); margin: 0; padding: 0; }
+html { line-height: 1.5; -webkit-text-size-adjust: 100%; tab-size: 4; font-family: var(--font-anthropic-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-variation-settings: "GRAD" 0; }
+body { line-height: inherit; background: var(--color-bg); color: var(--color-fg); }
+h1, h2, h3, h4, h5, h6 { font-size: inherit; font-weight: inherit; }
+a { color: inherit; text-decoration: inherit; }
+table { text-indent: 0; border-color: inherit; border-collapse: collapse; }
+img, svg, video, canvas { vertical-align: middle; display: block; }
+button, input, select, textarea { font: inherit; letter-spacing: inherit; color: inherit; opacity: 1; background-color: transparent; border-radius: 0; }
+[hidden]:where(:not([hidden="until-found"])) { display: none !important; }
+#dash-root { color: var(--color-fg); font-size: 14px; line-height: 1.45; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "PingFang TC", "Hiragino Sans", "Apple SD Gothic Neo", sans-serif;
+  padding: clamp(var(--cds-pad-md), 4%, var(--cds-pad-xl)); }
+#dash-root :is(b, strong) { font-weight: 600; }
+.dash-skeleton { -webkit-text-fill-color: transparent !important; background-image: linear-gradient(color-mix(in srgb, currentColor 13%, transparent) 0 0) !important; border-radius: 4px; }
+.dash-skeleton > * { visibility: hidden !important; }
+.dash-skeleton:empty::before { content: ""; width: 3ch; display: inline-block; }
 </style>
-</head>
-<body>
-<main>
-  <h1>Beitun sports center: how busy it is</h1>
-  <p class="sub">Average people inside, by time of day. Data from <a href="https://btcsc.cyc.org.tw/" style="color:var(--accent)">btcsc.cyc.org.tw</a>, collected once a minute and published from <a href="https://github.com/operate2959/btcsc-occupancy" style="color:var(--accent)">this repo</a>.</p>
-
-  <div class="bar" id="facs"></div>
-  <div class="tabs" id="tabs">
-    <button data-tab="heat" aria-pressed="true">Heatmap</button>
-    <button data-tab="daily" aria-pressed="false">Each day</button>
-    <button data-tab="raw" aria-pressed="false">Latest</button>
-    <button data-tab="data" aria-pressed="false">Data quality</button>
-  </div>
-
-  <div id="status" class="sub" style="margin-top:12px">Loading data…</div>
-
-  <section id="tab-heat">
-    <h2>By weekday</h2>
-    <div class="card" id="heat-dow"></div>
-    <h2>By day type</h2>
-    <div class="card" id="heat-type"></div>
-    <div class="legend">Quiet <span class="sw" id="lg1"></span> <span class="sw" id="lg2"></span> <span class="sw" id="lg3"></span> <span class="sw" id="lg4"></span> <span class="sw" id="lg5"></span> Busy &nbsp; · &nbsp; grey = no data. Missing minutes are left out of averages, never counted as zero.</div>
-  </section>
-
-  <section id="tab-daily" class="hidden">
-    <h2>Average by hour, each day</h2>
-    <div class="card" id="daily"></div>
-    <div class="legend">Same colour scale as the heatmap. Hover a cell for the average count.</div>
-  </section>
-
-  <section id="tab-raw" class="hidden">
-    <h2>Last 48 hours, one sample a minute</h2>
-    <div class="card" id="raw"></div>
-    <div class="legend">Dashed line = capacity. Gaps mean the collector was not running or the site did not answer.</div>
-  </section>
-
-  <section id="tab-data" class="hidden">
-    <h2>Coverage</h2>
-    <div class="card" id="coverage"></div>
-    <h2>Recent gaps</h2>
-    <div class="card" id="gaps"></div>
-  </section>
-
-  <footer>Opening hours: gym and pool 06:00–22:00, ice rink 10:00–21:00. Holidays use the Taiwan government calendar. Closed days are left out of the averages.</footer>
-</main>
-
 <script>
-const RAW = "https://raw.githubusercontent.com/operate2959/btcsc-occupancy/main/";
-const FACS = ["Gym", "Pool", "Ice rink"];
-const RAW_NAME = { gym: "Gym", swim: "Pool", ice: "Ice rink" };
-const DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-let fac = "Gym";
-let D = null;
-
-const $ = id => document.getElementById(id);
-const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-
-async function getJSON(p) { const r = await fetch(RAW + p, { cache: "no-cache" }); if (!r.ok) throw new Error(p + " " + r.status); return r.json(); }
-async function getText(p) { const r = await fetch(RAW + p, { cache: "no-cache" }); return r.ok ? r.text() : null; }
-
-// Colour: quiet = pale, busy = deep blue. p is the share of capacity (0..1).
-function colour(p) {
-  if (p == null || isNaN(p)) return { bg: "var(--line)", fg: "var(--muted)" };
-  const t = Math.max(0, Math.min(1, p / 0.8));
-  const a = [238, 246, 255], b = [11, 61, 145];
-  const c = a.map((v, i) => Math.round(v + (b[i] - v) * t));
-  return { bg: `rgb(${c.join(",")})`, fg: t > 0.5 ? "#fff" : "#1b1f24" };
-}
-
-function parseCSV(text) {
-  const lines = text.trim().split("\n");
-  const head = lines.shift().split(",");
-  return lines.map(l => { const v = l.split(","); const o = {}; head.forEach((h, i) => o[h] = v[i]); return o; });
-}
-
-async function loadRaw(recent) {
-  // The nightly merge puts the day's samples into recent.json. Samples from the
-  // last 1–2 days that are not merged yet are read from the per-run files.
-  const now = new Date(Date.now() + 8 * 3600e3);
-  const days = [0, 1].map(k => new Date(now.getTime() - k * 86400e3).toISOString().slice(0, 10));
-  const rows = [];
-  for (const d of days) for (const tag of [1, 2, 3, 4]) {
-    const t = await getText(`data/raw/${d}_${tag}.csv`);
-    if (t) rows.push(...parseCSV(t));
-  }
-  const byTs = {};
-  // recent.json uses short keys (gym, swim, ice); map them to the names used here
-  for (const r of recent) {
-    byTs[r.ts_taipei] = { ts_taipei: r.ts_taipei,
-      "Gym": r.gym, "Gym_cap": r.gym_cap, "Pool": r.swim, "Pool_cap": r.swim_cap,
-      "Ice rink": r.ice, "Ice rink_cap": r.ice_cap };
-  }
-  for (const r of rows) {
-    const f = RAW_NAME[r.facility]; if (!f) continue;
-    const ts = r.ts_taipei;
-    byTs[ts] = byTs[ts] || { ts_taipei: ts };
-    byTs[ts][f] = Number(r.count);
-    byTs[ts][f + "_cap"] = Number(r.capacity) || null;
-  }
-  return Object.values(byTs).sort((a, b) => a.ts_taipei < b.ts_taipei ? -1 : 1);
-}
-
-function renderFacButtons() {
-  $("facs").innerHTML = FACS.map(f => `<button data-fac="${esc(f)}" aria-pressed="${f === fac}">${esc(f)}</button>`).join("");
-}
-
-function renderHeat() {
-  const s = D.slots.filter(r => r.facility === fac);
-  const slots = [...new Set(s.map(r => r.slot))].sort();
-  const table = (view) => {
-    const rows = [...new Map(s.filter(r => r.view === view).map(r => [r.row_order, r.row])).entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]);
-    const lookup = {};
-    s.filter(r => r.view === view).forEach(r => lookup[r.row + "|" + r.slot] = r);
-    let h = `<table><tr><th></th>${slots.map(t => `<th class="top">${t.endsWith(":00") ? esc(t) : ""}</th>`).join("")}</tr>`;
-    for (const row of rows) {
-      h += `<tr><th>${esc(row)}</th>`;
-      for (const t of slots) {
-        const r = lookup[row + "|" + t];
-        const c = colour(r ? r.avg_pct : null);
-        const tip = r ? `${row} ${t}: average ${r.avg_count} people (${Math.round(r.avg_pct * 100)}% full), busiest ${r.max_count}, from ${r.days} days` : `${row} ${t}: no data`;
-        h += `<td class="c" style="background:${c.bg};color:${c.fg}" title="${esc(tip)}"></td>`;
-      }
-      h += "</tr>";
-    }
-    return h + "</table>";
+// A small stand-in for the dashboard runtime the page was first built on:
+// it loads the tables from the public GitHub repo and hands them to the page.
+(() => {
+  const RAW = "https://raw.githubusercontent.com/operate2959/btcsc-occupancy/main/";
+  const FILES = { slots: "analysis/out/slots.json", daily: "analysis/out/daily.json", coverage: "analysis/out/coverage.json", gaps: "analysis/out/gaps.json", recent: "analysis/out/recent.json" };
+  const sources = {}, calcs = [], listeners = [];
+  const defaults = { facility: "Gym", page: "heatmap", view: "type" };
+  let params = { ...defaults };
+  for (const k of Object.keys(FILES)) sources[k] = { status: "loading", data: [] };
+  let queued = false;
+  const fire = () => listeners.forEach((cb) => { try { cb(); } catch (e) { console.error(e); } });
+  const schedule = () => { if (queued) return; queued = true; queueMicrotask(() => { queued = false; fire(); }); };
+  window.dash = {
+    colors: Array.from({ length: 8 }, (_, i) => `var(--cds-chart-categorical-${i + 1})`),
+    calc(name, spec) { calcs.push({ name, ...spec }); sources[name] = { status: "loading", data: [] }; },
+    data(name) { return sources[name] || { status: "loading", data: [] }; },
+    onData(cb) { listeners.push(cb); },
+    params() { return { ...params }; },
+    setParams(p) { params = { ...params, ...p }; schedule(); },
+    resetParams() { params = { ...defaults }; schedule(); },
+    setLink(id) { try { history.replaceState(null, "", "#" + id); } catch (e) {} },
   };
-  $("heat-dow").innerHTML = table("dow");
-  $("heat-type").innerHTML = table("type");
-  ["lg1","lg2","lg3","lg4","lg5"].forEach((id, i) => $(id).style.background = colour((i + 0.5) * 0.16).bg);
-}
-
-function renderDaily() {
-  const d = D.daily.filter(r => r.facility === fac);
-  const dates = [...new Set(d.map(r => r.date))].sort();
-  const hours = [...new Set(d.map(r => r.hour))].sort((a, b) => a - b);
-  const lookup = {};
-  d.forEach(r => lookup[r.date + "|" + r.hour] = r);
-  let h = `<table><tr><th></th>${hours.map(x => `<th class="top">${x}</th>`).join("")}</tr>`;
-  for (const date of dates) {
-    const any = d.find(r => r.date === date);
-    const tag = any.day_type + (any.holiday_name ? " · " + any.holiday_name : "");
-    h += `<tr><th style="text-align:left">${esc(date)} ${esc(any.dow)} <span style="color:var(--muted)">${esc(tag)}</span></th>`;
-    for (const x of hours) {
-      const r = lookup[date + "|" + x];
-      const c = colour(r ? r.avg_pct : null);
-      const tip = r ? `${date} ${x}:00: average ${r.avg_count} people (${Math.round(r.avg_pct * 100)}% full), ${r.samples} samples` : `${date} ${x}:00: no data`;
-      h += `<td class="c" style="background:${c.bg};color:${c.fg}" title="${esc(tip)}">${r && r.avg_count != null ? Math.round(r.avg_count) : ""}</td>`;
+  const get = async (p) => { const r = await fetch(RAW + p, { cache: "no-cache" }); if (!r.ok) throw new Error(p + " " + r.status); return r; };
+  const parseCSV = (t) => { const ls = t.trim().split("\n"); const h = ls.shift().split(","); return ls.map((l) => { const v = l.split(","); const o = {}; h.forEach((k, i) => o[k] = v[i]); return o; }); };
+  // Samples not yet merged into recent.json sit in per-run files, pushed every 10 minutes.
+  async function freshRows() {
+    const now = Date.now() + 8 * 3600e3;
+    const days = [1, 0].map((k) => new Date(now - k * 86400e3).toISOString().slice(0, 10));
+    const names = days.flatMap((d) => [1, 2, 3, 4].map((t) => `data/raw/${d}_${t}.csv`));
+    const texts = await Promise.all(names.map((n) => fetch(RAW + n, { cache: "no-cache" }).then((r) => r.ok ? r.text() : null).catch(() => null)));
+    return texts.filter(Boolean).flatMap(parseCSV);
+  }
+  async function load() {
+    await Promise.all(Object.entries(FILES).map(async ([k, p]) => {
+      try { sources[k] = { status: "ok", data: await (await get(p)).json() }; }
+      catch (e) { sources[k] = { status: "error", data: [], message: String(e) }; }
+    }));
+    if (sources.recent.status === "ok") {
+      const byTs = new Map(sources.recent.data.map((r) => [r.ts_taipei, { ...r }]));
+      for (const r of await freshRows()) {
+        if (!["gym", "swim", "ice"].includes(r.facility)) continue;
+        const row = byTs.get(r.ts_taipei) || { ts_taipei: r.ts_taipei };
+        row[r.facility] = Number(r.count);
+        row[r.facility + "_cap"] = r.capacity === "" ? null : Number(r.capacity);
+        byTs.set(r.ts_taipei, row);
+      }
+      const rows = [...byTs.values()].sort((a, b) => a.ts_taipei < b.ts_taipei ? -1 : 1);
+      if (rows.length) {
+        const last = new Date(rows[rows.length - 1].ts_taipei.replace(" ", "T") + ":00Z").getTime();
+        const cut = new Date(last - 48 * 3600e3).toISOString().slice(0, 16).replace("T", " ");
+        sources.recent.data = rows.filter((r) => r.ts_taipei >= cut);
+      }
     }
-    h += "</tr>";
+    for (const c of calcs) {
+      const ins = c.inputs.map((i) => sources[i]);
+      if (ins.some((s) => s.status !== "ok")) { sources[c.name] = { status: "error", data: [] }; continue; }
+      try { sources[c.name] = { status: "ok", data: c.fn(...ins.map((s) => s.data)) }; }
+      catch (e) { console.error(e); sources[c.name] = { status: "error", data: [] }; }
+    }
+    fire();
   }
-  $("daily").innerHTML = (dates.length ? h + "</table>" : "<p>No days yet.</p>");
-}
-
-function renderRaw() {
-  const pts = D.raw.filter(r => r[fac] != null);
-  if (!pts.length) { $("raw").innerHTML = "<p>No samples yet.</p>"; return; }
-  const last = pts[pts.length - 1].ts_taipei;
-  const end = new Date(last.replace(" ", "T") + ":00+08:00").getTime();
-  const start = end - 48 * 3600e3;
-  const win = pts.filter(r => new Date(r.ts_taipei.replace(" ", "T") + ":00+08:00").getTime() >= start);
-  const W = 1000, H = 300, L = 40, R = 10, T = 10, B = 28;
-  const maxY = Math.max(10, ...win.map(r => Math.max(r[fac], r[fac + "_cap"] || 0)));
-  const x = t => L + (new Date(t.replace(" ", "T") + ":00+08:00").getTime() - start) / (48 * 3600e3) * (W - L - R);
-  const y = v => H - B - (v / maxY) * (H - B - T);
-  let path = "", cur = "";
-  for (let i = 0; i < win.length; i++) {
-    const r = win[i];
-    const prev = win[i - 1];
-    const gap = !prev || (new Date(r.ts_taipei.replace(" ", "T") + ":00+08:00") - new Date(prev.ts_taipei.replace(" ", "T") + ":00+08:00")) > 120e3;
-    path += (gap ? " M" : " L") + x(r.ts_taipei).toFixed(1) + "," + y(r[fac]).toFixed(1);
-  }
-  const capV = win.length ? win[win.length - 1][fac + "_cap"] : null;
-  let grid = "";
-  for (let h = 0; h <= 48; h += 6) {
-    const t = new Date(start + h * 3600e3 + 8 * 3600e3).toISOString().slice(5, 16).replace("T", " ");
-    const gx = L + h / 48 * (W - L - R);
-    grid += `<line class="grid" x1="${gx}" x2="${gx}" y1="${T}" y2="${H - B}"/><text x="${gx}" y="${H - 8}" text-anchor="middle">${esc(t)}</text>`;
-  }
-  for (let v = 0; v <= maxY; v += Math.ceil(maxY / 4 / 10) * 10) {
-    grid += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
-  }
-  const capLine = capV ? `<line x1="${L}" x2="${W - R}" y1="${y(capV)}" y2="${y(capV)}" stroke="var(--muted)" stroke-dasharray="4 4"/>` : "";
-  $("raw").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Last 48 hours">${grid}${capLine}<path d="${path.trim()}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>
-    <p class="sub">Latest: ${esc(last)} · ${win[win.length - 1][fac]} people${capV ? " of " + capV : ""}</p>`;
-}
-
-function renderData() {
-  const cov = D.coverage.map(c => `<tr><td>${esc(c.facility)}</td><td>${c.days}</td><td>${c.weekday_days}</td><td>${c.weekend_days}</td><td>${c.holiday_days}</td><td>${c.samples.toLocaleString()}</td><td>${esc(c.first_sample)}</td><td>${esc(c.last_sample)}</td><td>${c.gap_minutes} min in ${c.gaps} gaps</td></tr>`).join("");
-  $("coverage").innerHTML = `<table class="list"><tr><th>Facility</th><th>Days</th><th>Weekdays</th><th>Weekends</th><th>Holidays</th><th>Samples</th><th>First</th><th>Last</th><th>Missing</th></tr>${cov}</table>`;
-  const gaps = D.gaps.filter(g => !g.closed_day).slice(-30).reverse().map(g => `<tr><td>${esc(g.date)} ${esc(g.dow)}</td><td>${esc(g.start)}–${esc(g.end)}</td><td>${g.minutes}</td><td>${esc(g.cause)}</td></tr>`).join("");
-  $("gaps").innerHTML = `<table class="list"><tr><th>Date</th><th>Time</th><th>Minutes</th><th>Cause</th></tr>${gaps || "<tr><td colspan=4>No gaps</td></tr>"}</table>`;
-}
-
-function renderAll() { renderFacButtons(); renderHeat(); renderDaily(); renderRaw(); renderData(); }
-
-document.addEventListener("click", e => {
-  const f = e.target.closest("[data-fac]");
-  if (f && D) { fac = f.dataset.fac; renderAll(); return; }
-  const t = e.target.closest("[data-tab]");
-  if (t) {
-    document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-pressed", b === t));
-    ["heat","daily","raw","data"].forEach(k => $("tab-" + k).classList.toggle("hidden", k !== t.dataset.tab));
-  }
-});
-
-(async () => {
-  try {
-    const [slots, daily, coverage, gaps, recent] = await Promise.all([
-      getJSON("analysis/out/slots.json"), getJSON("analysis/out/daily.json"),
-      getJSON("analysis/out/coverage.json"), getJSON("analysis/out/gaps.json"),
-      getJSON("analysis/out/recent.json"),
-    ]);
-    const raw = await loadRaw(recent);
-    D = { slots, daily, coverage, gaps, raw };
-    const latest = raw.length ? raw[raw.length - 1].ts_taipei : "";
-    $("status").textContent = latest ? `Latest sample: ${latest} (Taipei time)` : "";
-    renderAll();
-  } catch (err) {
-    $("status").innerHTML = `<span class="err">Could not load the data: ${esc(err.message)}</span>`;
-  }
+  document.addEventListener("DOMContentLoaded", load);
+  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(fire, 150); });
 })();
 </script>
+</head>
+<body>
+<div id="dash-root" data-appifact-content>
+<style>
+.bt { font-family: var(--font-anthropic-sans); display: grid; gap: var(--cds-gap-lg); }
+.bt-head { display: grid; gap: var(--cds-gap-sm); }
+.bt-title { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0; text-wrap: balance; }
+.bt-take { margin: 0; color: var(--color-fg); font-size: var(--cds-font-size-body); max-width: 68ch; }
+.bt-take b, .bt b { font-weight: 600; }
+.bt-cov { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.bt-controls { display: flex; flex-wrap: wrap; gap: var(--cds-gap-md); align-items: center; }
+.bt-seg { display: inline-flex; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); overflow: hidden; }
+.bt-seg button { font: inherit; font-size: var(--cds-font-size-caption); padding: var(--cds-pad-xs) var(--cds-pad-sm); background: var(--color-bg); color: var(--color-fg-muted); border: 0; cursor: pointer; }
+.bt-seg button + button { border-left: 1px solid var(--color-border-line); }
+.bt-seg button[aria-pressed="true"] { background: var(--color-panel); color: var(--color-fg); font-weight: 600; }
+.bt-seg button:focus-visible { outline: 2px solid var(--color-fg); outline-offset: -2px; }
+.bt-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-sm); min-width: 0; }
+.bt-card h2 { margin: 0; font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+.bt-note { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.bt-chart { position: relative; min-height: 120px; }
+.bt-cal { position: relative; min-height: 120px; overflow-x: auto; }
+.bt-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; z-index: 2; }
+.bt-tip .k { color: var(--cds-text-secondary); }
+.bt-legend { display: flex; align-items: center; gap: var(--cds-gap-sm); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-variant-numeric: tabular-nums; }
+.bt-legend .ramp { width: 140px; height: 10px; border-radius: 5px; }
+.bt-grid { display: grid; gap: var(--cds-gap-md); grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+.bt-table { width: 100%; border-collapse: collapse; font-size: var(--cds-font-size-body); font-variant-numeric: tabular-nums; }
+.bt-table th { text-align: left; font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); border-bottom: 1px solid var(--color-border-line); padding: var(--cds-pad-xs) var(--cds-pad-sm) var(--cds-pad-xs) 0; }
+.bt-table td { padding: var(--cds-pad-xs) var(--cds-pad-sm) var(--cds-pad-xs) 0; border-bottom: 1px solid var(--color-border-line); }
+.bt-table .num { text-align: right; }
+.bt-table tr.grp td { padding-top: var(--cds-pad-sm); font-weight: 600; border-bottom: 0; }
+.bt-table td.bt-rep { color: var(--color-fg-muted); }
+.bt-empty { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.bt-fail { display: flex; align-items: center; justify-content: center; gap: var(--cds-gap-sm); min-height: 120px; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.bt-fail::before { content: ""; width: .375rem; height: .375rem; border-radius: 50%; background: var(--color-bad); }
+.bt-tabs { display: flex; gap: var(--cds-gap-xs); border-bottom: 1px solid var(--color-border-line); }
+.bt-tabs button { font: inherit; font-size: var(--cds-font-size-body); background: none; border: 0; border-bottom: 2px solid transparent; color: var(--color-fg-muted); padding: var(--cds-pad-xs) var(--cds-pad-sm); cursor: pointer; margin-bottom: -1px; }
+.bt-tabs button[aria-selected="true"] { color: var(--color-fg); border-bottom-color: var(--color-fg); font-weight: 600; }
+.bt-tabs button:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+.bt-page { display: grid; gap: var(--cds-gap-lg); }
+.bt-pill { display: inline-block; font-size: var(--cds-font-size-caption); font-weight: 600; padding: 0 var(--cds-pad-sm); border-radius: 999px; border: 1px solid currentColor; margin-right: var(--cds-gap-xs); color: var(--color-fg-muted); }
+.bt-pill.ok { color: var(--color-ok); }
+.bt-pill.warn { color: var(--color-warn); }
+.bt-pill.bad { color: var(--color-bad); }
+.bt-scroll { max-height: 28rem; overflow: auto; }
+.bt-scroll thead th { position: sticky; top: 0; background: var(--color-panel); }
+.bt-table tr.gap td { color: var(--color-bad); }
+[data-dash-source-state=empty] { color: transparent; }
+[data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+.bt-now { display: grid; gap: var(--cds-gap-md); grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); }
+.bt-stat { display: grid; gap: 2px; }
+.bt-stat .k { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.bt-stat .v { font-family: var(--font-anthropic-serif); font-size: 2.25rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.bt-stat .c { color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); font-variant-numeric: tabular-nums; }
+.bt-bar { height: 6px; border-radius: 3px; background: var(--color-border-line); overflow: hidden; }
+.bt-bar > i { display: block; height: 100%; background: var(--color-fg-muted); }
+</style>
+
+<div class="bt">
+  <nav class="bt-tabs" role="tablist" aria-label="Pages">
+    <button type="button" role="tab" id="tab-heatmap" data-page="heatmap">Heatmap</button>
+    <button type="button" role="tab" id="tab-log" data-page="log">Raw pulls</button>
+  </nav>
+
+  <div class="bt-page" id="page-heatmap">
+  <header class="bt-head">
+    <h1 class="bt-title">Beitun Sports Center crowd heatmap</h1>
+    <p class="bt-take" id="takeaway">
+      Quietest <span class="lx-fac-name">gym</span> time on a weekday so far:
+      <b class="lx-best-slot dash-skeleton" data-source="best" data-field="slot">—</b>,
+      averaging <b class="lx-best-count dash-skeleton" data-source="best" data-field="avg_count">—</b> people inside.
+    </p>
+    <p class="bt-cov" id="coverage">
+      Based on <span class="lx-cov-days dash-skeleton" data-source="coverage" data-field="days">—</span> days of one-minute samples
+      (<span class="lx-cov-wd" data-source="coverage" data-field="weekday_days">—</span> weekdays,
+      <span class="lx-cov-we" data-source="coverage" data-field="weekend_days">—</span> weekend days,
+      <span class="lx-cov-ho" data-source="coverage" data-field="holiday_days">—</span> holidays),
+      from <span class="lx-cov-first" data-source="coverage" data-field="first_sample">—</span>
+      to <span class="lx-cov-last" data-source="coverage" data-field="last_sample">—</span> Taiwan time.
+      <span class="lx-cov-warn"></span>
+      <span class="lx-cov-gapnote">Minutes with no data (<span class="lx-cov-gap" data-source="coverage" data-field="gap_minutes">—</span> so far, mostly site outages) are left out of every average, not counted as zero; Raw pulls lists them.</span>
+    </p>
+  </header>
+
+  <section class="bt-card" id="latest">
+    <h2>Latest count</h2>
+    <div class="bt-now">
+      <div class="bt-stat"><span class="k">Gym</span><span class="v lx-now dash-skeleton" data-source="recent" data-field="gym">—</span><span class="c">of <span class="lx-now" data-source="recent" data-field="gym_cap">—</span></span><div class="bt-bar"><i class="lx-bar" data-k="gym"></i></div></div>
+      <div class="bt-stat"><span class="k">Pool</span><span class="v lx-now dash-skeleton" data-source="recent" data-field="swim">—</span><span class="c">of <span class="lx-now" data-source="recent" data-field="swim_cap">—</span></span><div class="bt-bar"><i class="lx-bar" data-k="swim"></i></div></div>
+      <div class="bt-stat"><span class="k">Ice rink</span><span class="v lx-now dash-skeleton" data-source="recent" data-field="ice">—</span><span class="c">of <span class="lx-now" data-source="recent" data-field="ice_cap">—</span></span><div class="bt-bar"><i class="lx-bar" data-k="ice"></i></div></div>
+    </div>
+    <p class="bt-note">People inside at <b class="lx-now" data-source="recent" data-field="ts_taipei">—</b> Taiwan time<span class="lx-now-ago"></span>. This page updates about every 10 minutes; the center's own homepage has the live number.</p>
+  </section>
+
+  <div class="bt-controls">
+    <div class="bt-seg lx-fac" role="group" aria-label="Facility">
+      <button type="button" data-v="Gym">Gym</button>
+      <button type="button" data-v="Pool">Pool</button>
+      <button type="button" data-v="Ice rink">Ice rink</button>
+    </div>
+    <div class="bt-seg lx-view" role="group" aria-label="Rows">
+      <button type="button" data-v="type">Weekday / weekend / holiday</button>
+      <button type="button" data-v="dow">Each day of the week</button>
+    </div>
+  </div>
+
+  <section class="bt-card" id="heatmap">
+    <h2>How full it is, by time of day</h2>
+    <p class="bt-note">Average people inside per 30-minute slot, as a share of capacity. Darker is busier; blank means no samples yet.</p>
+    <div class="bt-chart lx-heat dash-skeleton" data-source="slots"></div>
+    <div class="bt-legend lx-legend"></div>
+  </section>
+
+  <div class="bt-grid">
+    <section class="bt-card" id="best-times">
+      <h2>Quietest times to go</h2>
+      <p class="bt-note">The three emptiest 30-minute slots for each kind of day.</p>
+      <table class="bt-table lx-best" data-source="best" data-row-key="key">
+        <thead><tr>
+          <th data-field="row">Day</th>
+          <th data-field="slot">Starts</th>
+          <th data-field="avg_count" class="num">Avg people</th>
+          <th data-field="avg_pct" class="num">Of capacity</th>
+          <th data-field="days" class="num">Days seen</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="bt-card" id="calendar">
+      <h2>Day by day</h2>
+      <p class="bt-note">Average per hour on each date from the last eight weeks. Holidays are marked ◆. Empty cells had no data; a dashed outline means part of that hour is missing.</p>
+      <div class="bt-cal lx-cal dash-skeleton" data-source="daily"></div>
+    </section>
+  </div>
+  </div>
+
+  <div class="bt-page" id="page-log" hidden>
+    <header class="bt-head">
+      <h1 class="bt-title">Raw pulls</h1>
+      <p class="bt-take" id="log-status">
+        <span class="bt-pill lx-pill">Checking</span>
+        Last pull <b class="lx-last dash-skeleton" data-source="health" data-field="last_pull">—</b> Taiwan time.
+        <b class="lx-lasthr" data-source="health" data-field="pulls_last_hour">—</b> of
+        <b class="lx-exphr" data-source="health" data-field="expected_last_hour">—</b> minutes captured in that hour;
+        <b class="lx-missed" data-source="health" data-field="missed_48h">—</b> minutes missed in the last 48 hours of opening time.
+      </p>
+      <p class="bt-cov">The collector pulls the site's feed once a minute. New pulls reach this page about every 10 minutes, so the newest row can be up to 15 minutes old.</p>
+    </header>
+
+    <section class="bt-card" id="hourly-capture">
+      <h2>Minutes captured per hour</h2>
+      <p class="bt-note">Out of 60 for a full hour during opening time (06:00–22:00). Short bars are gaps.</p>
+      <div class="bt-chart lx-hours dash-skeleton" data-source="hourly"></div>
+    </section>
+
+    <section class="bt-card" id="gaps">
+      <h2>Data gaps</h2>
+      <p class="bt-note">Stretches of opening time (06:00–22:00) with no pull at all, newest first. These minutes are missing, not zero: they are left out of the heatmap, the quietest times and the calendar.</p>
+      <div class="bt-scroll">
+        <table class="bt-table lx-gaps" data-source="gaps" data-row-key="date,start">
+          <thead><tr>
+            <th data-field="date">Date</th>
+            <th data-field="start">From</th>
+            <th data-field="end">To</th>
+            <th data-field="minutes" class="num">Minutes</th>
+            <th data-field="cause">Why</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="bt-card" id="raw-table">
+      <h2>Every pull, newest first</h2>
+      <p class="bt-note">People inside, exactly as the site reported it. Capacity: gym <span class="lx-cap" data-source="recent" data-field="gym_cap">—</span>, pool <span class="lx-cap" data-source="recent" data-field="swim_cap">—</span>, ice rink <span class="lx-cap" data-source="recent" data-field="ice_cap">—</span>.</p>
+      <div class="bt-scroll">
+        <table class="bt-table lx-raw" data-source="recent" data-row-key="ts_taipei">
+          <thead><tr>
+            <th data-field="ts_taipei">Time (Taiwan)</th>
+            <th data-field="gym" class="num">Gym</th>
+            <th data-field="swim" class="num">Pool</th>
+            <th data-field="ice" class="num">Ice rink</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+window.BT = window.BT || {};
+BT.fac = 'Gym';
+BT.view = 'type';
+
+dash.calc('best', {
+  inputs: ['slots'],
+  title: 'Quietest slots per day type',
+  description: 'For each facility and day type, the three 30-minute slots with the lowest average share of capacity.',
+  fn: (slots) => {
+    const out = [];
+    const groups = d3.group(slots.filter((r) => r.view === 'type'), (r) => r.facility, (r) => r.row);
+    for (const [facility, byRow] of groups) {
+      for (const [row, rs] of byRow) {
+        rs.slice().sort((a, b) => a.avg_pct - b.avg_pct || a.slot.localeCompare(b.slot)).slice(0, 3)
+          .forEach((r, i) => out.push({
+            key: facility + '|' + row + '|' + (i + 1), facility, row, row_order: r.row_order, rank: i + 1,
+            slot: r.slot, avg_count: r.avg_count, avg_pct: r.avg_pct, days: r.days,
+          }));
+      }
+    }
+    return out;
+  },
+});
+</script>
+
+<script>
+(() => {
+  const fmtPct = d3.format('.0%');
+  const enc = (v) => String(v).replace(/%/g, '%25').replace(/&/g, '%26').replace(/=/g, '%3D');
+  const root = document.querySelector('.bt');
+  const tipFor = (box) => {
+    let t = box.querySelector('.bt-tip');
+    if (!t) { t = document.createElement('div'); t.className = 'bt-tip'; t.hidden = true; box.appendChild(t); }
+    return t;
+  };
+  const showTip = (box, tip, event, lines) => {
+    tip.replaceChildren(...lines.map(([cls, txt]) => { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = txt; return d; }));
+    tip.hidden = false;
+    const b = box.getBoundingClientRect();
+    let x = event.clientX - b.left + box.scrollLeft + 12, y = event.clientY - b.top + 12;
+    const w = tip.offsetWidth;
+    if (x + w > box.scrollLeft + box.clientWidth) x = Math.max(box.scrollLeft, x - w - 24);
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  };
+  const resolve = (cssColor) => {
+    const el = document.createElement('span'); el.style.color = cssColor; root.appendChild(el);
+    const c = getComputedStyle(el).color; el.remove(); return c;
+  };
+  const slotEnd = (s) => { const [h, m] = s.split(':').map(Number); const t = h * 60 + m + 30; return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
+  const HOURS = { 'Gym': [6, 22], 'Pool': [6, 22], 'Ice rink': [10, 21] };
+  const slotsFor = (fac) => { const [a, b] = HOURS[fac]; const s = []; for (let m = a * 60; m < b * 60; m += 30) s.push(String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')); return s; };
+  const fail = (box, st) => {
+    box.replaceChildren();
+    if (st === 'error') { const d = document.createElement('div'); d.className = 'bt-fail'; d.textContent = 'Failed to load'; box.appendChild(d); }
+  };
+
+  document.querySelectorAll('.lx-fac button').forEach((b) => b.addEventListener('click', () => { BT.fac = b.dataset.v; dash.setParams({ facility: b.dataset.v }); }));
+  document.querySelectorAll('.lx-view button').forEach((b) => b.addEventListener('click', () => { BT.view = b.dataset.v; dash.setParams({ view: b.dataset.v }); }));
+
+  function ramp() {
+    const lo = resolve('var(--color-bg)'), hi = resolve(dash.colors[0]);
+    return d3.interpolateRgb(lo, hi);
+  }
+
+  function drawHeat() {
+    const box = document.querySelector('.lx-heat');
+    const legend = document.querySelector('.lx-legend');
+    const d = dash.data('slots');
+    if (d.status !== 'ok') { fail(box, d.status); legend.replaceChildren(); return; }
+    box.classList.remove('dash-skeleton');
+    const fac = BT.fac, view = BT.view;
+    const rows = d.data.filter((r) => r.facility === fac && r.view === view);
+    const rowNames = view === 'type' ? ['Weekday', 'Weekend', 'Holiday'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const slots = slotsFor(fac);
+    const byKey = new Map(rows.map((r) => [r.row + '|' + r.slot, r]));
+    const maxPct = Math.max(0.05, d3.max(rows, (r) => r.avg_pct) || 0);
+    const color = d3.scaleSequential([0, maxPct], ramp());
+
+    box.replaceChildren();
+    const W = Math.max(320, box.clientWidth);
+    const tmp = d3.select(box).append('svg').attr('width', 0).attr('height', 0);
+    const labelW = d3.max(rowNames, (n) => tmp.append('text').attr('font-size', 12).text(n).node().getComputedTextLength()) + 10;
+    tmp.remove();
+    const cw = (W - labelW - 2) / slots.length;
+    const ch = view === 'type' ? 34 : 26;
+    const H = rowNames.length * ch + 26;
+    box.style.minHeight = H + 'px';
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img')
+      .attr('aria-label', `${fac} average occupancy heatmap`);
+    const g = svg.append('g');
+    rowNames.forEach((n, i) => {
+      svg.append('text').attr('x', labelW - 8).attr('y', i * ch + ch / 2).attr('dy', '0.35em').attr('text-anchor', 'end')
+        .attr('font-size', 12).attr('fill', 'var(--color-fg-muted)').text(n);
+    });
+    const tip = tipFor(box);
+    const cells = [];
+    rowNames.forEach((n, i) => slots.forEach((s, j) => cells.push({ n, s, i, j, r: byKey.get(n + '|' + s) })));
+    g.selectAll('rect').data(cells).join('rect')
+      .attr('x', (c) => labelW + c.j * cw + 0.5).attr('y', (c) => c.i * ch + 1)
+      .attr('width', Math.max(1, cw - 1)).attr('height', ch - 2).attr('rx', 2)
+      .attr('fill', (c) => c.r && c.r.avg_pct != null ? color(c.r.avg_pct) : 'transparent')
+      .attr('stroke', (c) => c.r ? 'none' : 'var(--cds-chart-grid)').attr('stroke-width', 1)
+      .on('mousemove', (event, c) => showTip(box, tip, event, c.r ? [
+        ['k', `${c.n} · ${c.s}–${slotEnd(c.s)}`],
+        ['', `${d3.format('.0f')(c.r.avg_count)} people on average (${fmtPct(c.r.avg_pct)})`],
+        ['k', `Peak ${c.r.max_count} · ${c.r.days} day${c.r.days === 1 ? '' : 's'} sampled`],
+      ] : [['k', `${c.n} · ${c.s}–${slotEnd(c.s)}`], ['', 'No samples yet']]))
+      .on('mouseleave', () => { tip.hidden = true; });
+    const ticks = slots.filter((s) => s.endsWith(':00') && Number(s.slice(0, 2)) % (W < 560 ? 4 : 2) === 0);
+    svg.append('g').selectAll('text').data(ticks).join('text')
+      .attr('x', (s) => labelW + slots.indexOf(s) * cw).attr('y', rowNames.length * ch + 16)
+      .attr('font-size', 11).attr('fill', 'var(--color-fg-muted)').attr('text-anchor', 'start').text((s) => s);
+
+    const stops = d3.range(0, 1.01, 0.25).map((t) => color(t * maxPct)).join(', ');
+    const ramp_ = document.createElement('span'); ramp_.className = 'ramp'; ramp_.style.background = `linear-gradient(90deg, ${stops})`;
+    const a = document.createElement('span'); a.textContent = '0%';
+    const b = document.createElement('span'); b.textContent = fmtPct(maxPct) + ' of capacity';
+    legend.replaceChildren(a, ramp_, b);
+  }
+
+  function drawBest() {
+    const tbody = document.querySelector('.lx-best tbody');
+    const d = dash.data('best');
+    tbody.replaceChildren();
+    if (d.status !== 'ok') return;
+    const rows = d.data.filter((r) => r.facility === BT.fac).sort((a, b) => a.row_order - b.row_order || a.rank - b.rank);
+    if (!rows.length) {
+      const tr = tbody.insertRow(); const td = tr.insertCell(); td.colSpan = 5; td.className = 'bt-empty'; td.textContent = 'No samples yet.';
+      return;
+    }
+    for (const r of rows) {
+      const tr = tbody.insertRow(); tr.dataset.key = r.key;
+      [[r.row, r.rank === 1 ? '' : 'bt-rep'], [`${r.slot}–${slotEnd(r.slot)}`, ''], [d3.format('.0f')(r.avg_count), 'num'], [fmtPct(r.avg_pct), 'num'], [String(r.days), 'num']]
+        .forEach(([t, cls]) => { const td = tr.insertCell(); td.textContent = t; if (cls) td.className = cls; });
+    }
+  }
+
+  function drawCal() {
+    const box = document.querySelector('.lx-cal');
+    const d = dash.data('daily');
+    if (d.status !== 'ok') { fail(box, d.status); return; }
+    box.classList.remove('dash-skeleton');
+    const fac = BT.fac;
+    const all = d.data.filter((r) => r.facility === fac);
+    const dates = Array.from(new Set(all.map((r) => r.date))).sort().slice(-56);
+    box.replaceChildren();
+    if (!dates.length) { const p = document.createElement('p'); p.className = 'bt-empty'; p.textContent = 'No samples yet.'; box.appendChild(p); return; }
+    const info = new Map(all.map((r) => [r.date, r]));
+    const byKey = new Map(all.map((r) => [r.date + '|' + r.hour, r]));
+    const [h0, h1] = HOURS[fac];
+    const hours = d3.range(h0, h1);
+    const maxPct = Math.max(0.05, d3.max(all, (r) => r.avg_pct) || 0);
+    const color = d3.scaleSequential([0, maxPct], ramp());
+    const fmtDay = d3.utcFormat('%b %-d');
+    const label = (ds) => { const r = info.get(ds); return `${fmtDay(new Date(ds + 'T00:00:00Z'))} ${r.dow}${r.day_type === 'Holiday' ? ' ◆' : ''}`; };
+    const W = Math.max(300, box.clientWidth);
+    const labelW = 92, ch = 16, H = dates.length * ch + 22;
+    const cw = (W - labelW - 2) / hours.length;
+    box.style.minHeight = Math.min(H, 120) + 'px';
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', `${fac} occupancy by date and hour`);
+    const tip = tipFor(box);
+    dates.forEach((ds, i) => {
+      const r = info.get(ds);
+      svg.append('text').attr('x', labelW - 8).attr('y', i * ch + ch / 2).attr('dy', '0.35em').attr('text-anchor', 'end')
+        .attr('font-size', 11).attr('fill', r.day_type === 'Weekday' ? 'var(--color-fg-muted)' : 'var(--color-fg)').text(label(ds));
+    });
+    const cells = [];
+    dates.forEach((ds, i) => hours.forEach((h, j) => cells.push({ ds, h, i, j, r: byKey.get(ds + '|' + h) })));
+    svg.append('g').selectAll('rect').data(cells).join('rect')
+      .attr('x', (c) => labelW + c.j * cw + 0.5).attr('y', (c) => c.i * ch + 1).attr('width', Math.max(1, cw - 1)).attr('height', ch - 2).attr('rx', 2)
+      .attr('fill', (c) => c.r && c.r.avg_pct != null ? color(c.r.avg_pct) : 'transparent')
+      .attr('stroke', (c) => !c.r ? 'var(--cds-chart-grid)' : (c.r.samples < 45 ? 'var(--color-warn)' : 'none'))
+      .attr('stroke-dasharray', (c) => c.r && c.r.samples < 45 ? '2 2' : null)
+      .on('mousemove', (event, c) => {
+        const r = info.get(c.ds);
+        const head = `${label(c.ds).replace(' ◆', '')} · ${String(c.h).padStart(2, '0')}:00–${String(c.h + 1).padStart(2, '0')}:00`;
+        const kind = r.holiday_name ? `${r.day_type}: ${r.holiday_name}` : r.day_type;
+        showTip(box, tip, event, c.r ? [['k', head], ['', `${d3.format('.0f')(c.r.avg_count)} people on average (${fmtPct(c.r.avg_pct)})`], ['k', c.r.samples < 60 ? `${c.r.samples} of 60 minutes have data; the rest are left out` : kind]] : [['k', head], ['', 'No data: left out, not counted as zero'], ['k', kind]]);
+      })
+      .on('mouseleave', () => { tip.hidden = true; });
+    const step = W < 480 ? 4 : 2;
+    svg.append('g').selectAll('text').data(hours.filter((h) => h % step === 0)).join('text')
+      .attr('x', (h) => labelW + (h - h0) * cw).attr('y', dates.length * ch + 15)
+      .attr('font-size', 11).attr('fill', 'var(--color-fg-muted)').text((h) => String(h).padStart(2, '0') + ':00');
+  }
+
+  function drawText() {
+    const fac = BT.fac;
+    document.querySelector('.lx-fac-name').textContent = fac === 'Ice rink' ? 'ice rink' : fac.toLowerCase();
+    const best = dash.data('best');
+    const slot = document.querySelector('.lx-best-slot'), cnt = document.querySelector('.lx-best-count');
+    const where = 'key=' + enc(fac + '|Weekday|1');
+    slot.dataset.where = where; cnt.dataset.where = where;
+    const top = best.status === 'ok' ? best.data.find((r) => r.key === fac + '|Weekday|1') : null;
+    if (best.status === 'ok') { slot.classList.remove('dash-skeleton'); cnt.classList.remove('dash-skeleton'); }
+    slot.textContent = top ? `${top.slot}–${slotEnd(top.slot)}` : '—';
+    cnt.textContent = top ? d3.format('.0f')(top.avg_count) : '—';
+
+    const cov = dash.data('coverage');
+    const c = cov.status === 'ok' ? cov.data.find((r) => r.facility === fac) : null;
+    const covWhere = 'facility=' + enc(fac);
+    const set = (sel, v) => { const el = document.querySelector(sel); el.dataset.where = covWhere; el.textContent = v; el.classList.remove('dash-skeleton'); };
+    set('.lx-cov-days', c ? String(c.days) : '—');
+    set('.lx-cov-wd', c ? String(c.weekday_days) : '—');
+    set('.lx-cov-we', c ? String(c.weekend_days) : '—');
+    set('.lx-cov-ho', c ? String(c.holiday_days) : '—');
+    set('.lx-cov-first', c ? c.first_sample : '—');
+    set('.lx-cov-last', c ? c.last_sample : '—');
+    set('.lx-cov-gap', c && c.gap_minutes != null ? `${c.gap_minutes} minutes` : '—');
+    document.querySelector('.lx-cov-warn').textContent = c && c.days < 14 ? 'Still early: patterns firm up after two to three weeks of samples.' : '';
+  }
+
+  dash.onData(() => {
+    const p = dash.params();
+    if (p.facility) BT.fac = p.facility;
+    if (p.view) BT.view = p.view;
+    document.querySelectorAll('.lx-fac button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === BT.fac)));
+    document.querySelectorAll('.lx-view button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === BT.view)));
+    if (window.BT.page === 'log') return;
+    drawText();
+    drawHeat();
+    drawBest();
+    drawCal();
+  });
+})();
+</script>
+
+<script>
+dash.calc('hourly', {
+  inputs: ['recent'],
+  title: 'Minutes captured per hour',
+  description: 'Pulls per clock hour during opening time (06:00-22:00), against the minutes that hour should have, from the first pull to the last.',
+  fn: (recent) => {
+    if (!recent.length) return [];
+    const counts = new Map();
+    for (const r of recent) { const h = r.ts_taipei.slice(0, 13); counts.set(h, (counts.get(h) || 0) + 1); }
+    const first = recent[0].ts_taipei, last = recent[recent.length - 1].ts_taipei;
+    const toDate = (s) => new Date(s.replace(' ', 'T') + ':00Z');
+    const pad = (n) => String(n).padStart(2, '0');
+    const out = [];
+    for (let t = toDate(first.slice(0, 13) + ':00'); t <= toDate(last); t = new Date(t.getTime() + 3600e3)) {
+      const hr = t.getUTCHours();
+      if (hr < 6 || hr >= 22) continue;
+      const key = `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())} ${pad(hr)}`;
+      let from = 0, to = 60;
+      if (key === first.slice(0, 13)) from = Number(first.slice(14, 16));
+      if (key === last.slice(0, 13)) to = Number(last.slice(14, 16)) + 1;
+      out.push({ hour: key, pulls: counts.get(key) || 0, expected: Math.max(0, to - from) });
+    }
+    return out;
+  },
+});
+dash.calc('health', {
+  inputs: ['recent', 'hourly'],
+  title: 'Collector health',
+  description: 'Time of the newest pull, minutes captured in the latest hour, and minutes missed over the exported 48 hours.',
+  fn: (recent, hourly) => {
+    if (!recent.length) return [];
+    const lastHour = hourly[hourly.length - 1] || { pulls: 0, expected: 0 };
+    const missed = hourly.reduce((a, h) => a + Math.max(0, h.expected - h.pulls), 0);
+    return [{ last_pull: recent[recent.length - 1].ts_taipei, pulls_last_hour: lastHour.pulls, expected_last_hour: lastHour.expected, missed_48h: missed }];
+  },
+});
+</script>
+
+<script>
+(() => {
+  const pages = ['heatmap', 'log'];
+  const show = (name) => {
+    pages.forEach((p) => {
+      document.getElementById('page-' + p).hidden = p !== name;
+      document.getElementById('tab-' + p).setAttribute('aria-selected', String(p === name));
+    });
+    window.BT.page = name;
+    dash.setLink(name === 'log' ? 'page-log' : 'page-heatmap');
+    dash.setParams({ page: name });
+  };
+  document.querySelectorAll('.bt-tabs button').forEach((b) => b.addEventListener('click', () => show(b.dataset.page)));
+  const want = location.hash.slice(1);
+  const initial = want === 'page-log' || want === 'log' ? 'log' : 'heatmap';
+  pages.forEach((p) => { document.getElementById('page-' + p).hidden = p !== initial; document.getElementById('tab-' + p).setAttribute('aria-selected', String(p === initial)); });
+  window.BT.page = initial;
+  if (initial !== 'heatmap') dash.setParams({ page: initial });
+
+  const fmtAgo = (ts) => {
+    const t = new Date(ts.replace(' ', 'T') + ':00+08:00').getTime();
+    const m = Math.round((Date.now() - t) / 60000);
+    if (!isFinite(m)) return '';
+    if (m < 60) return `${m} min ago`;
+    const h = Math.floor(m / 60);
+    return h < 48 ? `${h} h ${m % 60} min ago` : `${Math.floor(h / 24)} days ago`;
+  };
+
+  function drawStatus() {
+    const h = dash.data('health');
+    const r = h.status === 'ok' && h.data.length ? h.data[0] : null;
+    const set = (sel, v) => { const el = document.querySelector(sel); el.textContent = v; el.classList.remove('dash-skeleton'); };
+    set('.lx-last', r ? r.last_pull : '—');
+    set('.lx-lasthr', r ? String(r.pulls_last_hour) : '—');
+    set('.lx-exphr', r ? String(r.expected_last_hour) : '—');
+    set('.lx-missed', r ? String(r.missed_48h) : '—');
+    const pill = document.querySelector('.lx-pill');
+    pill.classList.remove('ok', 'warn', 'bad');
+    if (!r) { pill.textContent = h.status === 'ok' ? 'No pulls yet' : 'Checking'; return; }
+    const ageMin = (Date.now() - new Date(r.last_pull.replace(' ', 'T') + ':00+08:00').getTime()) / 60000;
+    const tpeHour = Number(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Asia/Taipei' }).format(new Date()));
+    const open = tpeHour >= 6 && tpeHour < 22;
+    const complete = r.expected_last_hour === 0 || r.pulls_last_hour / r.expected_last_hour >= 0.9;
+    let cls = 'ok', label = 'Running';
+    if (open && ageMin > 130) { cls = 'bad'; label = 'Stalled'; }
+    else if (!complete) { cls = 'warn'; label = 'Gaps'; }
+    else if (!open) { label = 'Closed for the night'; }
+    pill.classList.add(cls);
+    pill.textContent = `${label} · ${fmtAgo(r.last_pull)}`;
+  }
+
+  function drawHours() {
+    const box = document.querySelector('.lx-hours');
+    const d = dash.data('hourly');
+    if (d.status !== 'ok') { box.replaceChildren(); if (d.status === 'error') { const f = document.createElement('div'); f.className = 'bt-fail'; f.textContent = 'Failed to load'; box.appendChild(f); } return; }
+    box.classList.remove('dash-skeleton');
+    box.replaceChildren();
+    const rows = d.data;
+    if (!rows.length) { const p = document.createElement('p'); p.className = 'bt-empty'; p.textContent = 'No pulls yet.'; box.appendChild(p); return; }
+    const W = Math.max(300, box.clientWidth), H = 140, m = { t: 8, r: 4, b: 34, l: 28 };
+    const x = d3.scaleBand(rows.map((r) => r.hour), [m.l, W - m.r]).padding(0.15);
+    const y = d3.scaleLinear([0, 60], [H - m.b, m.t]);
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Minutes captured per hour');
+    svg.append('g').selectAll('line').data([0, 30, 60]).join('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', (v) => y(v)).attr('y2', (v) => y(v)).attr('stroke', 'var(--cds-chart-grid)');
+    svg.append('g').selectAll('text').data([0, 30, 60]).join('text').attr('x', m.l - 6).attr('y', (v) => y(v)).attr('dy', '0.35em').attr('text-anchor', 'end').attr('font-size', 11).attr('fill', 'var(--color-fg-muted)').text((v) => v);
+    const tip = (() => { let t = box.querySelector('.bt-tip'); if (!t) { t = document.createElement('div'); t.className = 'bt-tip'; t.hidden = true; box.appendChild(t); } return t; })();
+    svg.append('g').selectAll('rect').data(rows).join('rect')
+      .attr('x', (r) => x(r.hour)).attr('width', x.bandwidth()).attr('rx', Math.min(4, x.bandwidth() / 2))
+      .attr('y', (r) => y(r.pulls)).attr('height', (r) => Math.max(0, y(0) - y(r.pulls)))
+      .attr('fill', (r) => r.expected && r.pulls / r.expected < 0.9 ? 'var(--cds-chart-status-critical)' : dash.colors[0])
+      .on('mousemove', (event, r) => {
+        tip.replaceChildren(...[[`${r.hour}:00`, 'k'], [`${r.pulls} of ${r.expected} minutes captured`, '']].map(([t, c]) => { const e = document.createElement('div'); if (c) e.className = c; e.textContent = t; return e; }));
+        tip.hidden = false;
+        const b = box.getBoundingClientRect();
+        let px = event.clientX - b.left + 12; if (px + tip.offsetWidth > b.width) px = Math.max(0, px - tip.offsetWidth - 24);
+        tip.style.left = px + 'px'; tip.style.top = (event.clientY - b.top + 12) + 'px';
+      })
+      .on('mouseleave', () => { tip.hidden = true; });
+    const every = Math.max(1, Math.ceil(rows.length / Math.floor((W - m.l) / 46)));
+    svg.append('g').selectAll('text').data(rows.filter((r, i) => i % every === 0)).join('text')
+      .attr('x', (r) => x(r.hour) + x.bandwidth() / 2).attr('y', H - m.b + 14).attr('text-anchor', 'middle').attr('font-size', 11).attr('fill', 'var(--color-fg-muted)')
+      .text((r) => r.hour.slice(11, 13) + ':00');
+    const days = rows.filter((r, i) => i === 0 || r.hour.slice(0, 10) !== rows[i - 1].hour.slice(0, 10));
+    svg.append('g').selectAll('text').data(days).join('text')
+      .attr('x', (r) => x(r.hour)).attr('y', H - 4).attr('font-size', 11).attr('fill', 'var(--color-fg)')
+      .text((r) => d3.utcFormat('%b %-d')(new Date(r.hour.slice(0, 10) + 'T00:00:00Z')));
+  }
+
+  function drawRaw() {
+    const tbody = document.querySelector('.lx-raw tbody');
+    const d = dash.data('recent');
+    tbody.replaceChildren();
+    const caps = document.querySelectorAll('.lx-cap');
+    if (d.status !== 'ok' || !d.data.length) { caps.forEach((c) => { c.textContent = '—'; }); return; }
+    const last = d.data.length - 1;
+    caps.forEach((c) => { c.dataset.row = String(last); const v = d.data[last][c.dataset.field]; c.textContent = v == null ? '—' : String(v); });
+    for (let i = last; i >= 0; i--) {
+      const r = d.data[i];
+      const tr = tbody.insertRow(); tr.dataset.key = r.ts_taipei;
+      [[r.ts_taipei, ''], [r.gym == null ? '' : String(r.gym), 'num'], [r.swim == null ? '' : String(r.swim), 'num'], [r.ice == null ? '' : String(r.ice), 'num']]
+        .forEach(([t, cls]) => { const td = tr.insertCell(); td.textContent = t; if (cls) td.className = cls; });
+    }
+  }
+
+  function drawGaps() {
+    const tbody = document.querySelector('.lx-gaps tbody');
+    const d = dash.data('gaps');
+    tbody.replaceChildren();
+    if (d.status !== 'ok') return;
+    if (!d.data.length) { const tr = tbody.insertRow(); const td = tr.insertCell(); td.colSpan = 5; td.className = 'bt-empty'; td.textContent = 'No gaps.'; return; }
+    const enc = (v) => String(v).replace(/%/g, '%25').replace(/,/g, '%2C');
+    const rows = d.data.slice().sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
+    for (const r of rows) {
+      const tr = tbody.insertRow(); tr.dataset.key = enc(r.date) + ',' + enc(r.start);
+      if (r.minutes >= 30) tr.className = 'gap';
+      const closed = r.closed_day === true || r.closed_day === 'True';
+      [[r.date, ''], [r.start, ''], [r.end, ''], [String(r.minutes), 'num'], [r.cause + (closed ? ' (closure day)' : ''), '']]
+        .forEach(([t, cls]) => { const td = tr.insertCell(); td.textContent = t; if (cls) td.className = cls; });
+    }
+  }
+
+  let firstLink = true;
+  dash.onData(() => {
+    const p = dash.params().page;
+    if (p && p !== window.BT.page) {
+      pages.forEach((q) => { document.getElementById('page-' + q).hidden = q !== p; document.getElementById('tab-' + q).setAttribute('aria-selected', String(q === p)); });
+      window.BT.page = p;
+    }
+    if (window.BT.page !== 'log') return;
+    drawStatus();
+    drawHours();
+    drawGaps();
+    drawRaw();
+    if (firstLink && want) { firstLink = false; document.getElementById('page-log').scrollIntoView(); }
+  });
+})();
+</script>
+
+<script>
+(() => {
+  dash.onData(() => {
+    const d = dash.data('recent');
+    const els = document.querySelectorAll('.lx-now');
+    const ago = document.querySelector('.lx-now-ago');
+    const bars = document.querySelectorAll('.lx-bar');
+    if (d.status !== 'ok' || !d.data.length) {
+      els.forEach((e) => { e.textContent = '—'; });
+      bars.forEach((b) => { b.style.width = '0'; });
+      ago.textContent = '';
+      return;
+    }
+    const i = d.data.length - 1, r = d.data[i];
+    els.forEach((e) => { e.dataset.row = String(i); const v = r[e.dataset.field]; e.textContent = v == null ? '—' : String(v); e.classList.remove('dash-skeleton'); });
+    bars.forEach((b) => { const k = b.dataset.k, cap = r[k + '_cap']; b.style.width = cap ? Math.min(100, 100 * r[k] / cap) + '%' : '0'; });
+    const m = Math.round((Date.now() - new Date(r.ts_taipei.replace(' ', 'T') + ':00+08:00').getTime()) / 60000);
+    ago.textContent = isFinite(m) && m >= 0 ? (m < 60 ? ` (${m} min ago)` : ` (${Math.floor(m / 60)} h ${m % 60} min ago)`) : '';
+  });
+})();
+</script>
+
+</div>
 </body>
 </html>
