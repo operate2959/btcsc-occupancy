@@ -36,6 +36,7 @@ On GitHub Actions in this repo (free on a public repo). Nothing runs on anyone's
   and `logs/collector.log`, rebuilds `analysis/out/*.json` for the dashboard and, on
   Mondays, snapshots the class timetable.
 - Either workflow can be started by hand from the Actions tab ("Run workflow").
+- The dashboard is `index.html` at the root, served by GitHub Pages. It reads the tables and the day's raw files straight from this repo, so nothing needs to run to refresh it.
 - If a run fails or starts very late, those minutes show up in `data/gaps.csv` and are
   left out of the averages.
 - From 2026-10-19 to 2026-11-07 the same collector ran in a Claude Code cloud session.
@@ -59,7 +60,7 @@ On GitHub Actions in this repo (free on a public repo). Nothing runs on anyone's
 Day types: **holiday** = a named public holiday or bridge day off; **weekend** = any other
 day off; **weekday** = a working day, including make-up working Saturdays.
 
-Dashboard: a private heatmap page built from `analysis/out/`.
+Dashboard: https://operate2959.github.io/btcsc-occupancy/ (GitHub Pages, reads the tables in `analysis/out/` directly).
 
 ## Other public signals
 
