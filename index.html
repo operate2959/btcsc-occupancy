@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beitun sports center crowd heatmap</title>
+<style>
+  :root { --bg:#f7f8fa; --fg:#1b1f24; --muted:#5f6b7a; --card:#fff; --line:#e3e7ee; --accent:#0b3d91; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#0f1318; --fg:#e6e9ef; --muted:#97a3b3; --card:#171c23; --line:#2a313b; --accent:#7ab0ff; }
+  }
+  :root[data-theme="dark"] { --bg:#0f1318; --fg:#e6e9ef; --muted:#97a3b3; --card:#171c23; --line:#2a313b; --accent:#7ab0ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 4px 0 2px; }
+  h2 { font-size: 16px; margin: 20px 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 12px; font-size: 13px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin: 8px 0 12px; }
+  button { font: inherit; color: var(--fg); background: var(--card); border:1px solid var(--line); border-radius:8px; padding:6px 12px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .card { background: var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; overflow-x:auto; }
+  table { border-collapse: separate; border-spacing: 2px; font-size: 12px; }
+  th { font-weight: 500; color: var(--muted); text-align:right; padding: 0 6px; white-space: nowrap; }
+  th.top { text-align:center; }
+  td.c { width: 30px; min-width: 30px; height: 26px; border-radius: 4px; text-align:center; font-size: 11px; }
+  td.lbl { text-align:left; padding-right: 8px; color: var(--fg); white-space: nowrap; }
+  .legend { display:flex; align-items:center; gap:6px; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .legend span.sw { width: 18px; height: 12px; border-radius: 3px; display:inline-block; }
+  .tabs { display:flex; gap:6px; flex-wrap:wrap; margin-top: 8px; }
+  .hidden { display:none; }
+  .err { color: #b42318; }
+  svg text { fill: var(--muted); font-size: 11px; }
+  svg .grid { stroke: var(--line); }
+  footer { color: var(--muted); font-size: 12px; margin: 24px 0 40px; }
+  table.list td, table.list th { text-align:left; padding: 4px 8px; font-size: 13px; }
+  table.list th { border-bottom: 1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Beitun sports center: how busy it is</h1>
+  <p class="sub">Average people inside, by time of day. Data from <a href="https://btcsc.cyc.org.tw/" style="color:var(--accent)">btcsc.cyc.org.tw</a>, collected once a minute and published from <a href="https://github.com/operate2959/btcsc-occupancy" style="color:var(--accent)">this repo</a>.</p>
+
+  <div class="bar" id="facs"></div>
+  <div class="tabs" id="tabs">
+    <button data-tab="heat" aria-pressed="true">Heatmap</button>
+    <button data-tab="daily" aria-pressed="false">Each day</button>
+    <button data-tab="raw" aria-pressed="false">Latest</button>
+    <button data-tab="data" aria-pressed="false">Data quality</button>
+  </div>
+
+  <div id="status" class="sub" style="margin-top:12px">Loading data…</div>
+
+  <section id="tab-heat">
+    <h2>By weekday</h2>
+    <div class="card" id="heat-dow"></div>
+    <h2>By day type</h2>
+    <div class="card" id="heat-type"></div>
+    <div class="legend">Quiet <span class="sw" id="lg1"></span> <span class="sw" id="lg2"></span> <span class="sw" id="lg3"></span> <span class="sw" id="lg4"></span> <span class="sw" id="lg5"></span> Busy &nbsp; · &nbsp; grey = no data. Missing minutes are left out of averages, never counted as zero.</div>
+  </section>
+
+  <section id="tab-daily" class="hidden">
+    <h2>Average by hour, each day</h2>
+    <div class="card" id="daily"></div>
+    <div class="legend">Same colour scale as the heatmap. Hover a cell for the average count.</div>
+  </section>
+
+  <section id="tab-raw" class="hidden">
+    <h2>Last 48 hours, one sample a minute</h2>
+    <div class="card" id="raw"></div>
+    <div class="legend">Dashed line = capacity. Gaps mean the collector was not running or the site did not answer.</div>
+  </section>
+
+  <section id="tab-data" class="hidden">
+    <h2>Coverage</h2>
+    <div class="card" id="coverage"></div>
+    <h2>Recent gaps</h2>
+    <div class="card" id="gaps"></div>
+  </section>
+
+  <footer>Opening hours: gym and pool 06:00–22:00, ice rink 10:00–21:00. Holidays use the Taiwan government calendar. Closed days are left out of the averages.</footer>
+</main>
+
+<script>
+const RAW = "https://raw.githubusercontent.com/operate2959/btcsc-occupancy/main/";
+const FACS = ["Gym", "Pool", "Ice rink"];
+const RAW_NAME = { gym: "Gym", swim: "Pool", ice: "Ice rink" };
+const DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+let fac = "Gym";
+let D = null;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function getJSON(p) { const r = await fetch(RAW + p, { cache: "no-cache" }); if (!r.ok) throw new Error(p + " " + r.status); return r.json(); }
+async function getText(p) { const r = await fetch(RAW + p, { cache: "no-cache" }); return r.ok ? r.text() : null; }
+
+// Colour: quiet = pale, busy = deep blue. p is the share of capacity (0..1).
+function colour(p) {
+  if (p == null || isNaN(p)) return { bg: "var(--line)", fg: "var(--muted)" };
+  const t = Math.max(0, Math.min(1, p / 0.8));
+  const a = [238, 246, 255], b = [11, 61, 145];
+  const c = a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  return { bg: `rgb(${c.join(",")})`, fg: t > 0.5 ? "#fff" : "#1b1f24" };
+}
+
+function parseCSV(text) {
+  const lines = text.trim().split("\n");
+  const head = lines.shift().split(",");
+  return lines.map(l => { const v = l.split(","); const o = {}; head.forEach((h, i) => o[h] = v[i]); return o; });
+}
+
+async function loadRaw(recent) {
+  // The nightly merge puts the day's samples into recent.json. Samples from the
+  // last 1–2 days that are not merged yet are read from the per-run files.
+  const now = new Date(Date.now() + 8 * 3600e3);
+  const days = [0, 1].map(k => new Date(now.getTime() - k * 86400e3).toISOString().slice(0, 10));
+  const rows = [];
+  for (const d of days) for (const tag of [1, 2, 3, 4]) {
+    const t = await getText(`data/raw/${d}_${tag}.csv`);
+    if (t) rows.push(...parseCSV(t));
+  }
+  const byTs = {};
+  // recent.json uses short keys (gym, swim, ice); map them to the names used here
+  for (const r of recent) {
+    byTs[r.ts_taipei] = { ts_taipei: r.ts_taipei,
+      "Gym": r.gym, "Gym_cap": r.gym_cap, "Pool": r.swim, "Pool_cap": r.swim_cap,
+      "Ice rink": r.ice, "Ice rink_cap": r.ice_cap };
+  }
+  for (const r of rows) {
+    const f = RAW_NAME[r.facility]; if (!f) continue;
+    const ts = r.ts_taipei;
+    byTs[ts] = byTs[ts] || { ts_taipei: ts };
+    byTs[ts][f] = Number(r.count);
+    byTs[ts][f + "_cap"] = Number(r.capacity) || null;
+  }
+  return Object.values(byTs).sort((a, b) => a.ts_taipei < b.ts_taipei ? -1 : 1);
+}
+
+function renderFacButtons() {
+  $("facs").innerHTML = FACS.map(f => `<button data-fac="${esc(f)}" aria-pressed="${f === fac}">${esc(f)}</button>`).join("");
+}
+
+function renderHeat() {
+  const s = D.slots.filter(r => r.facility === fac);
+  const slots = [...new Set(s.map(r => r.slot))].sort();
+  const table = (view) => {
+    const rows = [...new Map(s.filter(r => r.view === view).map(r => [r.row_order, r.row])).entries()].sort((a, b) => a[0] - b[0]).map(e => e[1]);
+    const lookup = {};
+    s.filter(r => r.view === view).forEach(r => lookup[r.row + "|" + r.slot] = r);
+    let h = `<table><tr><th></th>${slots.map(t => `<th class="top">${t.endsWith(":00") ? esc(t) : ""}</th>`).join("")}</tr>`;
+    for (const row of rows) {
+      h += `<tr><th>${esc(row)}</th>`;
+      for (const t of slots) {
+        const r = lookup[row + "|" + t];
+        const c = colour(r ? r.avg_pct : null);
+        const tip = r ? `${row} ${t}: average ${r.avg_count} people (${Math.round(r.avg_pct * 100)}% full), busiest ${r.max_count}, from ${r.days} days` : `${row} ${t}: no data`;
+        h += `<td class="c" style="background:${c.bg};color:${c.fg}" title="${esc(tip)}"></td>`;
+      }
+      h += "</tr>";
+    }
+    return h + "</table>";
+  };
+  $("heat-dow").innerHTML = table("dow");
+  $("heat-type").innerHTML = table("type");
+  ["lg1","lg2","lg3","lg4","lg5"].forEach((id, i) => $(id).style.background = colour((i + 0.5) * 0.16).bg);
+}
+
+function renderDaily() {
+  const d = D.daily.filter(r => r.facility === fac);
+  const dates = [...new Set(d.map(r => r.date))].sort();
+  const hours = [...new Set(d.map(r => r.hour))].sort((a, b) => a - b);
+  const lookup = {};
+  d.forEach(r => lookup[r.date + "|" + r.hour] = r);
+  let h = `<table><tr><th></th>${hours.map(x => `<th class="top">${x}</th>`).join("")}</tr>`;
+  for (const date of dates) {
+    const any = d.find(r => r.date === date);
+    const tag = any.day_type + (any.holiday_name ? " · " + any.holiday_name : "");
+    h += `<tr><th style="text-align:left">${esc(date)} ${esc(any.dow)} <span style="color:var(--muted)">${esc(tag)}</span></th>`;
+    for (const x of hours) {
+      const r = lookup[date + "|" + x];
+      const c = colour(r ? r.avg_pct : null);
+      const tip = r ? `${date} ${x}:00: average ${r.avg_count} people (${Math.round(r.avg_pct * 100)}% full), ${r.samples} samples` : `${date} ${x}:00: no data`;
+      h += `<td class="c" style="background:${c.bg};color:${c.fg}" title="${esc(tip)}">${r && r.avg_count != null ? Math.round(r.avg_count) : ""}</td>`;
+    }
+    h += "</tr>";
+  }
+  $("daily").innerHTML = (dates.length ? h + "</table>" : "<p>No days yet.</p>");
+}
+
+function renderRaw() {
+  const pts = D.raw.filter(r => r[fac] != null);
+  if (!pts.length) { $("raw").innerHTML = "<p>No samples yet.</p>"; return; }
+  const last = pts[pts.length - 1].ts_taipei;
+  const end = new Date(last.replace(" ", "T") + ":00+08:00").getTime();
+  const start = end - 48 * 3600e3;
+  const win = pts.filter(r => new Date(r.ts_taipei.replace(" ", "T") + ":00+08:00").getTime() >= start);
+  const W = 1000, H = 300, L = 40, R = 10, T = 10, B = 28;
+  const maxY = Math.max(10, ...win.map(r => Math.max(r[fac], r[fac + "_cap"] || 0)));
+  const x = t => L + (new Date(t.replace(" ", "T") + ":00+08:00").getTime() - start) / (48 * 3600e3) * (W - L - R);
+  const y = v => H - B - (v / maxY) * (H - B - T);
+  let path = "", cur = "";
+  for (let i = 0; i < win.length; i++) {
+    const r = win[i];
+    const prev = win[i - 1];
+    const gap = !prev || (new Date(r.ts_taipei.replace(" ", "T") + ":00+08:00") - new Date(prev.ts_taipei.replace(" ", "T") + ":00+08:00")) > 120e3;
+    path += (gap ? " M" : " L") + x(r.ts_taipei).toFixed(1) + "," + y(r[fac]).toFixed(1);
+  }
+  const capV = win.length ? win[win.length - 1][fac + "_cap"] : null;
+  let grid = "";
+  for (let h = 0; h <= 48; h += 6) {
+    const t = new Date(start + h * 3600e3 + 8 * 3600e3).toISOString().slice(5, 16).replace("T", " ");
+    const gx = L + h / 48 * (W - L - R);
+    grid += `<line class="grid" x1="${gx}" x2="${gx}" y1="${T}" y2="${H - B}"/><text x="${gx}" y="${H - 8}" text-anchor="middle">${esc(t)}</text>`;
+  }
+  for (let v = 0; v <= maxY; v += Math.ceil(maxY / 4 / 10) * 10) {
+    grid += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  }
+  const capLine = capV ? `<line x1="${L}" x2="${W - R}" y1="${y(capV)}" y2="${y(capV)}" stroke="var(--muted)" stroke-dasharray="4 4"/>` : "";
+  $("raw").innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Last 48 hours">${grid}${capLine}<path d="${path.trim()}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>
+    <p class="sub">Latest: ${esc(last)} · ${win[win.length - 1][fac]} people${capV ? " of " + capV : ""}</p>`;
+}
+
+function renderData() {
+  const cov = D.coverage.map(c => `<tr><td>${esc(c.facility)}</td><td>${c.days}</td><td>${c.weekday_days}</td><td>${c.weekend_days}</td><td>${c.holiday_days}</td><td>${c.samples.toLocaleString()}</td><td>${esc(c.first_sample)}</td><td>${esc(c.last_sample)}</td><td>${c.gap_minutes} min in ${c.gaps} gaps</td></tr>`).join("");
+  $("coverage").innerHTML = `<table class="list"><tr><th>Facility</th><th>Days</th><th>Weekdays</th><th>Weekends</th><th>Holidays</th><th>Samples</th><th>First</th><th>Last</th><th>Missing</th></tr>${cov}</table>`;
+  const gaps = D.gaps.filter(g => !g.closed_day).slice(-30).reverse().map(g => `<tr><td>${esc(g.date)} ${esc(g.dow)}</td><td>${esc(g.start)}–${esc(g.end)}</td><td>${g.minutes}</td><td>${esc(g.cause)}</td></tr>`).join("");
+  $("gaps").innerHTML = `<table class="list"><tr><th>Date</th><th>Time</th><th>Minutes</th><th>Cause</th></tr>${gaps || "<tr><td colspan=4>No gaps</td></tr>"}</table>`;
+}
+
+function renderAll() { renderFacButtons(); renderHeat(); renderDaily(); renderRaw(); renderData(); }
+
+document.addEventListener("click", e => {
+  const f = e.target.closest("[data-fac]");
+  if (f && D) { fac = f.dataset.fac; renderAll(); return; }
+  const t = e.target.closest("[data-tab]");
+  if (t) {
+    document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-pressed", b === t));
+    ["heat","daily","raw","data"].forEach(k => $("tab-" + k).classList.toggle("hidden", k !== t.dataset.tab));
+  }
+});
+
+(async () => {
+  try {
+    const [slots, daily, coverage, gaps, recent] = await Promise.all([
+      getJSON("analysis/out/slots.json"), getJSON("analysis/out/daily.json"),
+      getJSON("analysis/out/coverage.json"), getJSON("analysis/out/gaps.json"),
+      getJSON("analysis/out/recent.json"),
+    ]);
+    const raw = await loadRaw(recent);
+    D = { slots, daily, coverage, gaps, raw };
+    const latest = raw.length ? raw[raw.length - 1].ts_taipei : "";
+    $("status").textContent = latest ? `Latest sample: ${latest} (Taipei time)` : "";
+    renderAll();
+  } catch (err) {
+    $("status").innerHTML = `<span class="err">Could not load the data: ${esc(err.message)}</span>`;
+  }
+})();
+</script>
+</body>
+</html>
