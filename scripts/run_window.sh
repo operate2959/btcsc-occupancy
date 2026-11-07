@@ -22,6 +22,7 @@ push() {
 
 ARGS=(--loop --aligned --interval 60 --to "$TO" --out "$OUT" --log "$LOG")
 [ -n "${FROM:-}" ] && ARGS+=(--from "$FROM")
+[ "${ALWAYS:-}" = "true" ] && ARGS+=(--always)
 python3 collector/collect.py "${ARGS[@]}" &
 PID=$!
 while kill -0 $PID 2>/dev/null; do

@@ -23,6 +23,10 @@ on:
         description: "Stop (Taipei HH:MM)"
         required: true
         default: "22:51"
+      always:
+        description: "Sample even outside opening hours (for testing)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -50,4 +54,5 @@ jobs:
           FROM: ${{ steps.win.outputs.from }}
           TO: ${{ steps.win.outputs.to }}
           TAG: ${{ steps.win.outputs.tag }}
+          ALWAYS: ${{ inputs.always }}
         run: bash scripts/run_window.sh
