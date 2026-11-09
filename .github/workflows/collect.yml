@@ -1,35 +1,41 @@
 name: Collect occupancy
 
 # Samples the btcsc.cyc.org.tw live counter once a minute, 05:50-22:51 Taipei.
-# A scheduled workflow can't run every minute, so each run loops inside itself
-# for up to 5h45m (a job may run 6h max).
-# GitHub often starts scheduled runs hours late, or drops them, so a run is
-# triggered every hour and the window is worked out from when a run actually
-# starts, not from which trigger fired. The concurrency group lets only one run
-# sample at a time; the next one waits and takes over when it finishes.
+# A job may run 6h at most, so each run covers a window of up to 5h40m and,
+# just before it ends, starts the next run itself (workflow_dispatch with
+# auto=true). The chain runs around the clock: overnight runs just wait, and
+# the run that reaches 05:50 starts sampling. This does not depend on GitHub's
+# scheduler, which on 2026-11-09 started only 2 of 19 hourly scheduled runs.
+# The schedule below stays as a fallback that restarts the chain if it breaks.
+# The concurrency group keeps one run going and at most one waiting, so the
+# chain can't multiply: a newer waiting run replaces an older one.
 # Runs append to data/raw/<date>_1.csv; the nightly workflow merges it into
 # data/YYYY-MM.csv.
 
 on:
   schedule:
-    - cron: "17 20-23 * * *"   # 04:17-07:17 Taipei
-    - cron: "17 0-14 * * *"    # 08:17-22:17 Taipei
+    - cron: "37 */3 * * *"   # fallback restarter, every 3 hours
   workflow_dispatch:
     inputs:
+      auto:
+        description: "Work out the window from the current time and keep the chain going"
+        type: boolean
+        default: true
       from:
-        description: "Start (Taipei HH:MM, blank = now)"
+        description: "Manual run only: start (Taipei HH:MM, blank = now)"
         required: false
       to:
-        description: "Stop (Taipei HH:MM)"
-        required: true
+        description: "Manual run only: stop (Taipei HH:MM)"
+        required: false
         default: "22:51"
       always:
-        description: "Sample even outside opening hours (for testing)"
+        description: "Manual run only: sample even outside opening hours (for testing)"
         type: boolean
         default: false
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: collect
@@ -38,34 +44,77 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 358
     steps:
       - uses: actions/checkout@v4
 
       - name: Pick the time window
         id: win
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.auto }}" != "true" ]; then
+            echo "mode=sample" >> $GITHUB_OUTPUT
             echo "from=${{ inputs.from }}" >> $GITHUB_OUTPUT
             echo "to=${{ inputs.to }}" >> $GITHUB_OUTPUT
             echo "tag=m${{ github.run_id }}" >> $GITHUB_OUTPUT
+            echo "chain=0" >> $GITHUB_OUTPUT
             exit 0
           fi
+          echo "chain=1" >> $GITHUB_OUTPUT
+          echo "tag=1" >> $GITHUB_OUTPUT
+          echo "JOB_START=$(date +%s)" >> $GITHUB_ENV
           # Minutes since midnight, Taipei time.
           now=$(( 10#$(TZ=Asia/Taipei date +%H) * 60 + 10#$(TZ=Asia/Taipei date +%M) ))
-          open=$(( 5 * 60 + 50 )); close=$(( 22 * 60 + 51 ))
-          end=$(( now + 345 )); [ $end -gt $close ] && end=$close
-          if [ $now -ge $close ]; then echo "skip=1" >> $GITHUB_OUTPUT; exit 0; fi
-          from=""; [ $now -lt $open ] && from="05:50"
-          echo "from=$from" >> $GITHUB_OUTPUT
-          printf 'to=%02d:%02d\n' $(( end / 60 )) $(( end % 60 )) >> $GITHUB_OUTPUT
-          echo "tag=1" >> $GITHUB_OUTPUT
+          open=$(( 5 * 60 + 50 )); close=$(( 22 * 60 + 51 )); span=340
+          hhmm() { printf '%02d:%02d' $(( $1 / 60 )) $(( $1 % 60 )); }
+          if [ $now -ge $open ] && [ $now -lt $close ]; then
+            end=$(( now + span )); [ $end -gt $close ] && end=$close
+            echo "mode=sample" >> $GITHUB_OUTPUT
+            echo "from=" >> $GITHUB_OUTPUT
+            echo "to=$(hhmm $end)" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          until_open=$(( (open - now + 1440) % 1440 ))
+          if [ $now -lt $open ] && [ $until_open -le $(( span - 10 )) ]; then
+            # Opens within this run: wait for 05:50, then sample.
+            echo "mode=sample" >> $GITHUB_OUTPUT
+            echo "from=05:50" >> $GITHUB_OUTPUT
+            echo "to=$(hhmm $(( now + span )))" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          # Closed for the rest of this run: wait, then hand over.
+          wait=$(( until_open - 20 )); [ $wait -gt $span ] && wait=$span
+          echo "mode=idle" >> $GITHUB_OUTPUT
+          echo "idle_minutes=$wait" >> $GITHUB_OUTPUT
 
       - name: Sample once a minute and commit every 10 minutes
-        if: steps.win.outputs.skip != '1'
+        if: steps.win.outputs.mode == 'sample'
+        timeout-minutes: 346
         env:
           FROM: ${{ steps.win.outputs.from }}
           TO: ${{ steps.win.outputs.to }}
           TAG: ${{ steps.win.outputs.tag }}
           ALWAYS: ${{ inputs.always }}
         run: bash scripts/run_window.sh
+
+      - name: Wait while the centre is closed
+        if: steps.win.outputs.mode == 'idle'
+        timeout-minutes: 346
+        run: |
+          echo "Closed; waiting ${{ steps.win.outputs.idle_minutes }} minutes before handing over."
+          sleep $(( ${{ steps.win.outputs.idle_minutes }} * 60 ))
+
+      - name: Start the next run
+        # Runs even if sampling failed, so one bad run doesn't stop the chain.
+        # The pause stops a run that fails at once from looping rapidly.
+        if: always() && steps.win.outputs.chain == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          elapsed=$(( $(date +%s) - ${JOB_START:-0} ))
+          [ $elapsed -lt 600 ] && sleep $(( 600 - elapsed ))
+          for i in 1 2 3 4 5; do
+            gh workflow run collect.yml --repo "${{ github.repository }}" --ref main -f auto=true && exit 0
+            sleep $(( i * 20 ))
+          done
+          echo "Could not start the next run; the schedule will restart the chain." >&2
+          exit 1
