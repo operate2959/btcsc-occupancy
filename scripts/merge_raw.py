@@ -6,14 +6,26 @@ import csv
 import glob
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "collector"))
 from collect import FIELDS  # noqa: E402
 
 
+def not_in_use(paths):
+    """Leave today's files alone until collection ends (22:51 Taipei): a run may
+    still be appending to them, and deleting them would break its next push.
+    GitHub can start this workflow hours late, so it may run during the day."""
+    now = datetime.now(timezone(timedelta(hours=8)))
+    if now.hour >= 23:
+        return paths
+    today = now.strftime("%Y-%m-%d")
+    return [p for p in paths if not os.path.basename(p).startswith(today)]
+
+
 def main():
-    raw = sorted(glob.glob(os.path.join(ROOT, "data", "raw", "*.csv")))
+    raw = not_in_use(sorted(glob.glob(os.path.join(ROOT, "data", "raw", "*.csv"))))
     new = {}
     for p in raw:
         with open(p, encoding="utf-8") as f:
@@ -37,7 +49,7 @@ def main():
             w.writeheader()
             w.writerows(merged)
         print(f"{month}: +{len(merged) - len(have)} rows")
-    logs = sorted(glob.glob(os.path.join(ROOT, "logs", "raw", "*.log")))
+    logs = not_in_use(sorted(glob.glob(os.path.join(ROOT, "logs", "raw", "*.log"))))
     if logs:
         lines = []
         for p in logs:
