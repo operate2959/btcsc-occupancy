@@ -34,3 +34,5 @@ date,dow,start,end,minutes,cause,closed_day
 2026-11-09,Mon,06:00,07:43,103,not sampled (collector was not running),False
 2026-11-09,Mon,13:28,14:44,76,not sampled (collector was not running),False
 2026-11-09,Mon,20:29,22:00,91,not sampled (collector was not running),False
+2026-11-11,Wed,14:55,14:56,1,not sampled (collector was not running),False
+2026-11-11,Wed,15:52,21:33,341,not sampled (collector was not running),False
