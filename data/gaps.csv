@@ -34,5 +34,10 @@ date,dow,start,end,minutes,cause,closed_day
 2026-11-09,Mon,06:00,07:43,103,not sampled (collector was not running),False
 2026-11-09,Mon,13:28,14:44,76,not sampled (collector was not running),False
 2026-11-09,Mon,20:29,22:00,91,not sampled (collector was not running),False
-2026-11-11,Wed,14:55,14:56,1,not sampled (collector was not running),False
-2026-11-11,Wed,15:52,21:33,341,not sampled (collector was not running),False
+2026-11-11,Wed,19:58,21:33,95,not sampled (collector was not running),False
+2026-11-13,Fri,10:12,10:52,40,not sampled (collector was not running),False
+2026-11-13,Fri,10:55,11:51,56,not sampled (collector was not running),False
+2026-11-13,Fri,11:54,12:51,57,not sampled (collector was not running),False
+2026-11-13,Fri,12:54,13:51,57,not sampled (collector was not running),False
+2026-11-13,Fri,13:54,14:51,57,not sampled (collector was not running),False
+2026-11-13,Fri,14:54,15:52,58,not sampled (collector was not running),False
