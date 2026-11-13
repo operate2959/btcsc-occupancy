@@ -9,8 +9,9 @@ name: Collect occupancy
 # The schedule below stays as a fallback that restarts the chain if it breaks.
 # The concurrency group keeps one run going and at most one waiting, so the
 # chain can't multiply: a newer waiting run replaces an older one.
-# Runs append to data/raw/<date>_1.csv; the nightly workflow merges it into
-# data/YYYY-MM.csv.
+# Runs share data/raw/<date>_1.csv: each push merges the run's rows into the
+# latest copy on main (scripts/run_window.sh). The nightly workflow merges it
+# into data/YYYY-MM.csv.
 
 on:
   schedule:
@@ -47,6 +48,10 @@ jobs:
     timeout-minutes: 358
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The branch head when the job starts, not the commit current when the
+          # run was queued: a run can wait hours behind another one.
+          ref: main
 
       - name: Pick the time window
         id: win
