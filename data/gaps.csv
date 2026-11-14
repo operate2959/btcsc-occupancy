@@ -41,3 +41,5 @@ date,dow,start,end,minutes,cause,closed_day
 2026-11-13,Fri,12:54,13:51,57,not sampled (collector was not running),False
 2026-11-13,Fri,13:54,14:51,57,not sampled (collector was not running),False
 2026-11-13,Fri,14:54,15:52,58,not sampled (collector was not running),False
+2026-11-14,Sat,07:06,08:54,108,site timed out,False
+2026-11-14,Sat,08:55,08:56,1,not sampled (collector was not running),False
