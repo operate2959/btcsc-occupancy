@@ -283,7 +283,7 @@ button, input, select, textarea { font: inherit; letter-spacing: inherit; color:
           <button type="button" data-v="on">Weather on</button>
           <button type="button" data-v="off">Off</button>
         </div>
-        <span class="bt-note lx-wx-key">● rain that hour (bigger is heavier) · right column: the day's high</span>
+        <span class="bt-note lx-wx-key">● rain that hour (bigger is heavier) · right column: the day's high · hover a cell for that hour's temperature</span>
       </div>
       <div class="bt-cal lx-cal dash-skeleton" data-source="daily"></div>
       <p class="bt-note lx-wx-note"></p>
@@ -602,13 +602,35 @@ dash.calc('best', {
     const dry = d3.rollup(rows.filter((r) => r.wx.rain < 0.2), (v) => d3.mean(v, (r) => r.avg_count), key);
     const wet = rows.filter((r) => r.wx.rain >= 0.5 && dry.has(key(r)));
     const name = fac === 'Ice rink' ? 'ice rink' : fac.toLowerCase();
-    if (wet.length < 3) { el.textContent = `Not enough rainy hours yet to compare (${wet.length} so far).`; return; }
-    const diff = d3.mean(wet, (r) => r.avg_count - dry.get(key(r)));
-    const days = new Set(wet.map((r) => r.date)).size;
-    const n = Math.abs(Math.round(diff));
-    el.textContent = `In the ${wet.length} rainy hours so far (on ${days} day${days === 1 ? '' : 's'}), the ${name} had `
-      + (n === 0 ? 'about the same number of people as' : `about ${n} ${diff < 0 ? 'fewer' : 'more'} people than`)
-      + ' dry hours at the same time and kind of day. An early read; it firms up as more wet days come in.';
+    let rainTxt;
+    if (wet.length < 3) rainTxt = `Rain: not enough rainy hours yet to compare (${wet.length} so far).`;
+    else {
+      const diff = d3.mean(wet, (r) => r.avg_count - dry.get(key(r)));
+      const days = new Set(wet.map((r) => r.date)).size;
+      const n = Math.abs(Math.round(diff));
+      rainTxt = `Rain: in the ${wet.length} rainy hours so far (on ${days} day${days === 1 ? '' : 's'}), the ${name} had `
+        + (n === 0 ? 'about the same number of people as' : `about ${n} ${diff < 0 ? 'fewer' : 'more'} people than`)
+        + ' dry hours at the same time and kind of day.';
+    }
+    el.textContent = rainTxt + ' ' + tempRead(rows, key, name) + ' Both are early reads that firm up as more days come in.';
+  }
+
+  // Temperature: compare each dry hour with the usual temperature and crowd for that hour and kind of day,
+  // so the time-of-day pattern (cool mornings, warm afternoons) doesn't masquerade as a weather effect.
+  function tempRead(rows, key, name) {
+    const dryT = rows.filter((r) => r.wx.rain < 0.2 && r.wx.temp != null);
+    const base = d3.rollup(dryT, (v) => ({ n: v.length, t: d3.mean(v, (r) => r.wx.temp), c: d3.mean(v, (r) => r.avg_count) }), key);
+    const pts = dryT.filter((r) => base.get(key(r)).n >= 3).map((r) => { const b = base.get(key(r)); return { dt: r.wx.temp - b.t, dc: r.avg_count - b.c }; });
+    const sd = d3.deviation(pts, (p) => p.dt) || 0;
+    if (pts.length < 30 || sd < 1) return `Temperature: not enough spread in temperatures yet to compare (${pts.length} hours so far).`;
+    const slope = d3.sum(pts, (p) => p.dt * p.dc) / d3.sum(pts, (p) => p.dt * p.dt);
+    const cool = pts.filter((p) => p.dt <= -2), warm = pts.filter((p) => p.dt >= 2);
+    const per3 = Math.round(Math.abs(slope * 3));
+    const lo = d3.min(dryT, (r) => r.wx.temp), hi = d3.max(dryT, (r) => r.wx.temp);
+    return `Temperature: so far (${Math.round(lo)} to ${Math.round(hi)}°C), `
+      + (per3 <= 1 ? `the ${name} crowd barely changes when it is warmer or cooler than usual`
+        : `when it is 3°C ${slope < 0 ? 'cooler' : 'warmer'} than usual for that hour, the ${name} has about ${per3} more people`)
+      + ` (from ${pts.length} dry hours; ${cool.length} notably cooler, ${warm.length} notably warmer).`;
   }
 
   function drawText() {
