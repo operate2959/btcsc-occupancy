@@ -69,6 +69,20 @@ button, input, select, textarea { font: inherit; letter-spacing: inherit; color:
   const defaults = { facility: "Gym", page: "heatmap", view: "type" };
   let params = { ...defaults };
   for (const k of Object.keys(FILES)) sources[k] = { status: "loading", data: [] };
+  sources.weather = { status: "loading", data: [], current: null };
+  // Hourly weather for Beitun from Open-Meteo (free, no key). It loads on its own so a slow
+  // or failed weather call never holds up the occupancy charts.
+  const WX = "https://api.open-meteo.com/v1/forecast?latitude=24.18&longitude=120.69&timezone=Asia%2FTaipei&past_days=92&forecast_days=1"
+    + "&hourly=temperature_2m,precipitation,weather_code&current=temperature_2m,precipitation,weather_code";
+  async function weather() {
+    try {
+      const r = await fetch(WX);
+      if (!r.ok) throw new Error("weather " + r.status);
+      const j = await r.json(), h = j.hourly;
+      const data = h.time.map((t, i) => ({ ts: t.replace("T", " "), temp: h.temperature_2m[i], rain: h.precipitation[i], code: h.weather_code[i] }));
+      return { status: "ok", data, current: j.current || null };
+    } catch (e) { return { status: "error", data: [], current: null, message: String(e) }; }
+  }
   let queued = false;
   const fire = () => listeners.forEach((cb) => { try { cb(); } catch (e) { console.error(e); } });
   const schedule = () => { if (queued) return; queued = true; queueMicrotask(() => { queued = false; fire(); }); };
@@ -93,6 +107,7 @@ button, input, select, textarea { font: inherit; letter-spacing: inherit; color:
     return texts.filter(Boolean).flatMap(parseCSV);
   }
   async function load() {
+    weather().then((w) => { sources.weather = w; fire(); });
     await Promise.all(Object.entries(FILES).map(async ([k, p]) => {
       try { sources[k] = { status: "ok", data: await (await get(p)).json() }; }
       catch (e) { sources[k] = { status: "error", data: [], message: String(e) }; }
@@ -122,7 +137,13 @@ button, input, select, textarea { font: inherit; letter-spacing: inherit; color:
     fire();
   }
   document.addEventListener("DOMContentLoaded", load);
-  let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(fire, 150); });
+  // Redraw only when the width changes. Phones fire a resize every time the address bar
+  // slides in or out while scrolling; redrawing every chart then made the page stutter.
+  let rt, lastW = window.innerWidth;
+  window.addEventListener("resize", () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => { if (window.innerWidth === lastW) return; lastW = window.innerWidth; fire(); }, 150);
+  });
 })();
 </script>
 </head>
@@ -146,7 +167,7 @@ button, input, select, textarea { font: inherit; letter-spacing: inherit; color:
 .bt-note { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
 .bt-chart { position: relative; min-height: 120px; }
 .bt-cal { position: relative; min-height: 120px; overflow-x: auto; }
-.bt-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; z-index: 2; }
+.bt-tip { position: fixed; left: 0; top: 0; max-width: calc(100vw - 16px); pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; z-index: 2; }
 .bt-tip .k { color: var(--cds-text-secondary); }
 .bt-legend { display: flex; align-items: center; gap: var(--cds-gap-sm); font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); font-variant-numeric: tabular-nums; }
 .bt-legend .ramp { width: 140px; height: 10px; border-radius: 5px; }
@@ -216,7 +237,7 @@ button, input, select, textarea { font: inherit; letter-spacing: inherit; color:
       <div class="bt-stat"><span class="k">Pool</span><span class="v lx-now dash-skeleton" data-source="recent" data-field="swim">—</span><span class="c">of <span class="lx-now" data-source="recent" data-field="swim_cap">—</span></span><div class="bt-bar"><i class="lx-bar" data-k="swim"></i></div></div>
       <div class="bt-stat"><span class="k">Ice rink</span><span class="v lx-now dash-skeleton" data-source="recent" data-field="ice">—</span><span class="c">of <span class="lx-now" data-source="recent" data-field="ice_cap">—</span></span><div class="bt-bar"><i class="lx-bar" data-k="ice"></i></div></div>
     </div>
-    <p class="bt-note">People inside at <b class="lx-now" data-source="recent" data-field="ts_taipei">—</b> Taiwan time<span class="lx-now-ago"></span>. This page updates about every 10 minutes; the center's own homepage has the live number.</p>
+    <p class="bt-note">People inside at <b class="lx-now" data-source="recent" data-field="ts_taipei">—</b> Taiwan time<span class="lx-now-ago"></span>.<span class="lx-wx-now"></span> This page updates about every 10 minutes; the center's own homepage has the live number.</p>
   </section>
 
   <div class="bt-controls">
@@ -257,7 +278,15 @@ button, input, select, textarea { font: inherit; letter-spacing: inherit; color:
     <section class="bt-card" id="calendar">
       <h2>Day by day</h2>
       <p class="bt-note">Average per hour on each date from the last eight weeks. Holidays are marked ◆. Empty cells had no data; a dashed outline means part of that hour is missing.</p>
+      <div class="bt-controls">
+        <div class="bt-seg lx-wx" role="group" aria-label="Weather overlay">
+          <button type="button" data-v="on">Weather on</button>
+          <button type="button" data-v="off">Off</button>
+        </div>
+        <span class="bt-note lx-wx-key">● rain that hour (bigger is heavier) · right column: the day's high</span>
+      </div>
       <div class="bt-cal lx-cal dash-skeleton" data-source="daily"></div>
+      <p class="bt-note lx-wx-note"></p>
     </section>
   </div>
   </div>
@@ -320,6 +349,29 @@ button, input, select, textarea { font: inherit; letter-spacing: inherit; color:
 window.BT = window.BT || {};
 BT.fac = 'Gym';
 BT.view = 'type';
+BT.wx = 'on';
+
+// One tooltip for the whole page, fixed to the viewport. It used to live inside each chart,
+// where near an edge it overflowed the chart box, flashed a scrollbar and shifted the chart.
+(() => {
+  let tip = null;
+  const el = () => {
+    if (!tip) { tip = document.createElement('div'); tip.className = 'bt-tip'; tip.hidden = true; document.getElementById('dash-root').appendChild(tip); }
+    return tip;
+  };
+  BT.showTip = (event, lines) => {
+    const t = el();
+    t.replaceChildren(...lines.map(([cls, txt]) => { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = txt; return d; }));
+    t.hidden = false;
+    const w = t.offsetWidth, h = t.offsetHeight, pad = 8;
+    let x = event.clientX + 12, y = event.clientY + 12;
+    if (x + w > innerWidth - pad) x = Math.max(pad, event.clientX - w - 12);
+    if (y + h > innerHeight - pad) y = Math.max(pad, event.clientY - h - 12);
+    t.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+  };
+  BT.hideTip = () => { if (tip) tip.hidden = true; };
+  addEventListener('scroll', BT.hideTip, { capture: true, passive: true });
+})();
 
 dash.calc('best', {
   inputs: ['slots'],
@@ -347,19 +399,30 @@ dash.calc('best', {
   const fmtPct = d3.format('.0%');
   const enc = (v) => String(v).replace(/%/g, '%25').replace(/&/g, '%26').replace(/=/g, '%3D');
   const root = document.querySelector('.bt');
-  const tipFor = (box) => {
-    let t = box.querySelector('.bt-tip');
-    if (!t) { t = document.createElement('div'); t.className = 'bt-tip'; t.hidden = true; box.appendChild(t); }
-    return t;
-  };
-  const showTip = (box, tip, event, lines) => {
-    tip.replaceChildren(...lines.map(([cls, txt]) => { const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = txt; return d; }));
-    tip.hidden = false;
-    const b = box.getBoundingClientRect();
-    let x = event.clientX - b.left + box.scrollLeft + 12, y = event.clientY - b.top + 12;
-    const w = tip.offsetWidth;
-    if (x + w > box.scrollLeft + box.clientWidth) x = Math.max(box.scrollLeft, x - w - 24);
-    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  const tipFor = () => null;
+  const showTip = (box, tip, event, lines) => BT.showTip(event, lines);
+  const hideTip = () => BT.hideTip();
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const WMO = (c) => c == null ? '' : c === 0 ? 'clear' : c <= 2 ? 'partly cloudy' : c === 3 ? 'overcast' : c <= 48 ? 'fog'
+    : c <= 57 ? 'drizzle' : c <= 67 ? 'rain' : c <= 77 ? 'snow' : c <= 82 ? 'showers' : c <= 86 ? 'snow showers' : 'thunderstorm';
+  const rainWord = (mm) => mm >= 4 ? 'heavy rain' : mm >= 1 ? 'rain' : 'light rain';
+  // Weather for an opening hour h on date ds. Open-Meteo's hourly precipitation at hh:00
+  // is the total for the hour before it, so the hour h:00-h+1:00 reads the value at h+1.
+  function wxFor(ds, h) {
+    const w = dash.data('weather');
+    if (w.status !== 'ok') return null;
+    if (!w.byTs) w.byTs = new Map(w.data.map((r) => [r.ts, r]));
+    const a = w.byTs.get(`${ds} ${pad2(h)}:00`), b = w.byTs.get(`${ds} ${pad2(h + 1)}:00`);
+    if (!a && !b) return null;
+    const temps = [a, b].filter((r) => r && r.temp != null).map((r) => r.temp);
+    return { temp: temps.length ? d3.mean(temps) : null, rain: b ? b.rain : null, code: b ? b.code : a.code };
+  }
+  BT.wxFor = wxFor;
+  const wxText = (x) => {
+    if (!x) return null;
+    const t = x.temp == null ? '' : `${Math.round(x.temp)}°C`;
+    const sky = x.rain >= 0.2 ? `${rainWord(x.rain)} ${d3.format('.1f')(x.rain)} mm` : WMO(x.code);
+    return [t, sky].filter(Boolean).join(', ');
   };
   const resolve = (cssColor) => {
     const el = document.createElement('span'); el.style.color = cssColor; root.appendChild(el);
@@ -375,6 +438,7 @@ dash.calc('best', {
 
   document.querySelectorAll('.lx-fac button').forEach((b) => b.addEventListener('click', () => { BT.fac = b.dataset.v; dash.setParams({ facility: b.dataset.v }); }));
   document.querySelectorAll('.lx-view button').forEach((b) => b.addEventListener('click', () => { BT.view = b.dataset.v; dash.setParams({ view: b.dataset.v }); }));
+  document.querySelectorAll('.lx-wx button').forEach((b) => b.addEventListener('click', () => { BT.wx = b.dataset.v; dash.setParams({ wx: b.dataset.v }); }));
 
   function ramp() {
     const lo = resolve('var(--color-bg)'), hi = resolve(dash.colors[0]);
@@ -424,7 +488,7 @@ dash.calc('best', {
         ['', `${d3.format('.0f')(c.r.avg_count)} people on average (${fmtPct(c.r.avg_pct)})`],
         ['k', `Peak ${c.r.max_count} · ${c.r.days} day${c.r.days === 1 ? '' : 's'} sampled`],
       ] : [['k', `${c.n} · ${c.s}–${slotEnd(c.s)}`], ['', 'No samples yet']]))
-      .on('mouseleave', () => { tip.hidden = true; });
+      .on('mouseleave', hideTip);
     const ticks = slots.filter((s) => s.endsWith(':00') && Number(s.slice(0, 2)) % (W < 560 ? 4 : 2) === 0);
     svg.append('g').selectAll('text').data(ticks).join('text')
       .attr('x', (s) => labelW + slots.indexOf(s) * cw).attr('y', rowNames.length * ch + 16)
@@ -473,9 +537,10 @@ dash.calc('best', {
     const fmtDay = d3.utcFormat('%b %-d');
     const label = (ds) => { const r = info.get(ds); return `${fmtDay(new Date(ds + 'T00:00:00Z'))} ${r.dow}${r.day_type === 'Holiday' ? ' ◆' : ''}`; };
     const W = Math.max(300, box.clientWidth);
-    const labelW = 92, ch = 16, H = dates.length * ch + 22;
-    const cw = (W - labelW - 2) / hours.length;
-    box.style.minHeight = Math.min(H, 120) + 'px';
+    const showWx = BT.wx === 'on' && dash.data('weather').status === 'ok';
+    const labelW = 92, wxW = showWx ? 30 : 0, ch = 16, H = dates.length * ch + 22;
+    const cw = (W - labelW - wxW - 2) / hours.length;
+    box.style.minHeight = H + 'px';
     const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', `${fac} occupancy by date and hour`);
     const tip = tipFor(box);
     dates.forEach((ds, i) => {
@@ -484,7 +549,16 @@ dash.calc('best', {
         .attr('font-size', 11).attr('fill', r.day_type === 'Weekday' ? 'var(--color-fg-muted)' : 'var(--color-fg)').text(label(ds));
     });
     const cells = [];
-    dates.forEach((ds, i) => hours.forEach((h, j) => cells.push({ ds, h, i, j, r: byKey.get(ds + '|' + h) })));
+    dates.forEach((ds, i) => hours.forEach((h, j) => cells.push({ ds, h, i, j, r: byKey.get(ds + '|' + h), wx: wxFor(ds, h) })));
+    if (showWx) {
+      // Day's high during opening hours, in a narrow column on the right.
+      dates.forEach((ds, i) => {
+        const temps = hours.map((h) => wxFor(ds, h)).filter((x) => x && x.temp != null).map((x) => x.temp);
+        if (!temps.length) return;
+        svg.append('text').attr('x', W - 2).attr('y', i * ch + ch / 2).attr('dy', '0.35em').attr('text-anchor', 'end')
+          .attr('font-size', 10).attr('fill', 'var(--color-fg-muted)').text(Math.round(d3.max(temps)) + '°');
+      });
+    }
     svg.append('g').selectAll('rect').data(cells).join('rect')
       .attr('x', (c) => labelW + c.j * cw + 0.5).attr('y', (c) => c.i * ch + 1).attr('width', Math.max(1, cw - 1)).attr('height', ch - 2).attr('rx', 2)
       .attr('fill', (c) => c.r && c.r.avg_pct != null ? color(c.r.avg_pct) : 'transparent')
@@ -494,13 +568,47 @@ dash.calc('best', {
         const r = info.get(c.ds);
         const head = `${label(c.ds).replace(' ◆', '')} · ${String(c.h).padStart(2, '0')}:00–${String(c.h + 1).padStart(2, '0')}:00`;
         const kind = r.holiday_name ? `${r.day_type}: ${r.holiday_name}` : r.day_type;
-        showTip(box, tip, event, c.r ? [['k', head], ['', `${d3.format('.0f')(c.r.avg_count)} people on average (${fmtPct(c.r.avg_pct)})`], ['k', c.r.samples < 60 ? `${c.r.samples} of 60 minutes have data; the rest are left out` : kind]] : [['k', head], ['', 'No data: left out, not counted as zero'], ['k', kind]]);
+        const lines = c.r ? [['k', head], ['', `${d3.format('.0f')(c.r.avg_count)} people on average (${fmtPct(c.r.avg_pct)})`], ['k', c.r.samples < 60 ? `${c.r.samples} of 60 minutes have data; the rest are left out` : kind]] : [['k', head], ['', 'No data: left out, not counted as zero'], ['k', kind]];
+        const wt = BT.wx === 'on' ? wxText(c.wx) : null;
+        if (wt) lines.push(['k', 'Weather: ' + wt]);
+        showTip(box, tip, event, lines);
       })
-      .on('mouseleave', () => { tip.hidden = true; });
+      .on('mouseleave', hideTip);
+    if (showWx) {
+      // Rain marker: a dot in the corner of each hour with at least 0.2 mm, bigger when heavier.
+      const wet = cells.filter((c) => c.wx && c.wx.rain >= 0.2);
+      svg.append('g').attr('pointer-events', 'none').selectAll('circle').data(wet).join('circle')
+        .attr('cx', (c) => labelW + (c.j + 1) * cw - 3.5).attr('cy', (c) => c.i * ch + 4.5)
+        .attr('r', (c) => c.wx.rain >= 4 ? 3 : c.wx.rain >= 1 ? 2.3 : 1.6)
+        .attr('fill', 'var(--color-fg)').attr('stroke', 'var(--color-panel)').attr('stroke-width', 1);
+    }
     const step = W < 480 ? 4 : 2;
     svg.append('g').selectAll('text').data(hours.filter((h) => h % step === 0)).join('text')
       .attr('x', (h) => labelW + (h - h0) * cw).attr('y', dates.length * ch + 15)
       .attr('font-size', 11).attr('fill', 'var(--color-fg-muted)').text((h) => String(h).padStart(2, '0') + ':00');
+    if (showWx) svg.append('text').attr('x', W - 2).attr('y', dates.length * ch + 15).attr('text-anchor', 'end')
+      .attr('font-size', 10).attr('fill', 'var(--color-fg-muted)').text('high');
+    drawRainNote(all, fac);
+  }
+
+  // Rainy hours against dry hours at the same hour of day and kind of day, so a wet evening
+  // is compared with dry evenings, not with quiet mornings.
+  function drawRainNote(all, fac) {
+    const el = document.querySelector('.lx-wx-note');
+    const w = dash.data('weather');
+    if (BT.wx !== 'on' || w.status !== 'ok') { el.textContent = w.status === 'error' && BT.wx === 'on' ? 'Weather could not be loaded right now.' : ''; return; }
+    const rows = all.filter((r) => r.samples >= 45).map((r) => ({ ...r, wx: wxFor(r.date, r.hour) })).filter((r) => r.wx && r.wx.rain != null);
+    const key = (r) => r.day_type + '|' + r.hour;
+    const dry = d3.rollup(rows.filter((r) => r.wx.rain < 0.2), (v) => d3.mean(v, (r) => r.avg_count), key);
+    const wet = rows.filter((r) => r.wx.rain >= 0.5 && dry.has(key(r)));
+    const name = fac === 'Ice rink' ? 'ice rink' : fac.toLowerCase();
+    if (wet.length < 3) { el.textContent = `Not enough rainy hours yet to compare (${wet.length} so far).`; return; }
+    const diff = d3.mean(wet, (r) => r.avg_count - dry.get(key(r)));
+    const days = new Set(wet.map((r) => r.date)).size;
+    const n = Math.abs(Math.round(diff));
+    el.textContent = `In the ${wet.length} rainy hours so far (on ${days} day${days === 1 ? '' : 's'}), the ${name} had `
+      + (n === 0 ? 'about the same number of people as' : `about ${n} ${diff < 0 ? 'fewer' : 'more'} people than`)
+      + ' dry hours at the same time and kind of day. An early read; it firms up as more wet days come in.';
   }
 
   function drawText() {
@@ -533,6 +641,10 @@ dash.calc('best', {
     const p = dash.params();
     if (p.facility) BT.fac = p.facility;
     if (p.view) BT.view = p.view;
+    if (p.wx) BT.wx = p.wx;
+    document.querySelectorAll('.lx-wx button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === BT.wx)));
+    document.querySelector('.lx-wx-key').hidden = BT.wx !== 'on';
+    BT.hideTip();
     document.querySelectorAll('.lx-fac button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === BT.fac)));
     document.querySelectorAll('.lx-view button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === BT.view)));
     if (window.BT.page === 'log') return;
@@ -647,19 +759,12 @@ dash.calc('health', {
     const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`).attr('role', 'img').attr('aria-label', 'Minutes captured per hour');
     svg.append('g').selectAll('line').data([0, 30, 60]).join('line').attr('x1', m.l).attr('x2', W - m.r).attr('y1', (v) => y(v)).attr('y2', (v) => y(v)).attr('stroke', 'var(--cds-chart-grid)');
     svg.append('g').selectAll('text').data([0, 30, 60]).join('text').attr('x', m.l - 6).attr('y', (v) => y(v)).attr('dy', '0.35em').attr('text-anchor', 'end').attr('font-size', 11).attr('fill', 'var(--color-fg-muted)').text((v) => v);
-    const tip = (() => { let t = box.querySelector('.bt-tip'); if (!t) { t = document.createElement('div'); t.className = 'bt-tip'; t.hidden = true; box.appendChild(t); } return t; })();
     svg.append('g').selectAll('rect').data(rows).join('rect')
       .attr('x', (r) => x(r.hour)).attr('width', x.bandwidth()).attr('rx', Math.min(4, x.bandwidth() / 2))
       .attr('y', (r) => y(r.pulls)).attr('height', (r) => Math.max(0, y(0) - y(r.pulls)))
       .attr('fill', (r) => r.expected && r.pulls / r.expected < 0.9 ? 'var(--cds-chart-status-critical)' : dash.colors[0])
-      .on('mousemove', (event, r) => {
-        tip.replaceChildren(...[[`${r.hour}:00`, 'k'], [`${r.pulls} of ${r.expected} minutes captured`, '']].map(([t, c]) => { const e = document.createElement('div'); if (c) e.className = c; e.textContent = t; return e; }));
-        tip.hidden = false;
-        const b = box.getBoundingClientRect();
-        let px = event.clientX - b.left + 12; if (px + tip.offsetWidth > b.width) px = Math.max(0, px - tip.offsetWidth - 24);
-        tip.style.left = px + 'px'; tip.style.top = (event.clientY - b.top + 12) + 'px';
-      })
-      .on('mouseleave', () => { tip.hidden = true; });
+      .on('mousemove', (event, r) => BT.showTip(event, [['k', `${r.hour}:00`], ['', `${r.pulls} of ${r.expected} minutes captured`]]))
+      .on('mouseleave', BT.hideTip);
     const every = Math.max(1, Math.ceil(rows.length / Math.floor((W - m.l) / 46)));
     svg.append('g').selectAll('text').data(rows.filter((r, i) => i % every === 0)).join('text')
       .attr('x', (r) => x(r.hour) + x.bandwidth() / 2).attr('y', H - m.b + 14).attr('text-anchor', 'middle').attr('font-size', 11).attr('fill', 'var(--color-fg-muted)')
@@ -738,6 +843,14 @@ dash.calc('health', {
     bars.forEach((b) => { const k = b.dataset.k, cap = r[k + '_cap']; b.style.width = cap ? Math.min(100, 100 * r[k] / cap) + '%' : '0'; });
     const m = Math.round((Date.now() - new Date(r.ts_taipei.replace(' ', 'T') + ':00+08:00').getTime()) / 60000);
     ago.textContent = isFinite(m) && m >= 0 ? (m < 60 ? ` (${m} min ago)` : ` (${Math.floor(m / 60)} h ${m % 60} min ago)`) : '';
+  });
+  dash.onData(() => {
+    const el = document.querySelector('.lx-wx-now');
+    const c = dash.data('weather').current;
+    if (!c || c.temperature_2m == null) { el.textContent = ''; return; }
+    const code = c.weather_code;
+    const sky = c.precipitation >= 0.2 ? 'raining' : code === 0 ? 'clear' : code <= 2 ? 'partly cloudy' : code === 3 ? 'overcast' : code <= 48 ? 'foggy' : code <= 67 || (code >= 80 && code <= 82) ? 'rain about' : code >= 95 ? 'thunderstorms' : '';
+    el.textContent = ` Outside now: ${Math.round(c.temperature_2m)}°C${sky ? ', ' + sky : ''}.`;
   });
 })();
 </script>
